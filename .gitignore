@@ -1,0 +1,26 @@
+
+
+
+# build stuff
+node_modules
+dist
+out
+e2e/test-storage/metadata.db
+e2e/test-storage/sources-george4x.csv
+
+# too big for github
+resources/weaviate/weaviate-embedded-latest
+
+# Jeremy's development stuff
+meaningfully.code-workspace
+.DS_Store
+.env
+.ipynb_checkpoints/
+__pycache__
+*.log*
+certs/
+.vscode/
+sample-data/
+python-prototype/chroma/
+python-prototype/storage/
+screenshots/
