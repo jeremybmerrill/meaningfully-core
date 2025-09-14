@@ -6,10 +6,10 @@ import {
   TransformComponent,
   TextNode,
   ModalityType,
-  MetadataFilters,
+  type MetadataFilters,
   storageContextFromDefaults,
   SimpleVectorStore,
-  StorageContext,
+  type StorageContext,
   Settings as LlamaindexSettings,
   SimpleDocumentStore
 } from "llamaindex";
@@ -18,17 +18,17 @@ import { MistralAIEmbedding, MistralAIEmbeddingModelType } from '@llamaindex/mis
 import { GeminiEmbedding } from '@llamaindex/google'
 import { PGVectorStore } from '@llamaindex/postgres';
 import { AzureOpenAIEmbedding } from "@llamaindex/azure";
-import { Sploder } from "./sploder";
-import { CustomSentenceSplitter } from "./sentenceSplitter";
-import { MockEmbedding } from "./mockEmbedding";
-import { encodingForModel, TiktokenModel } from "js-tiktoken";
+import { Sploder } from "./sploder.js";
+import { CustomSentenceSplitter } from "./sentenceSplitter.js";
+import { MockEmbedding } from "./mockEmbedding.js";
+import { encodingForModel, type TiktokenModel } from "js-tiktoken";
 import { join } from "path";
-import { EmbeddingConfig, Settings, MetadataFilter, Clients  } from "../types";
-import { sanitizeProjectName, capitalizeFirstLetter } from "../utils";
+import type { EmbeddingConfig, Settings, MetadataFilter, Clients  } from "../types/index.js";
+import { sanitizeProjectName, capitalizeFirstLetter } from "../utils.js";
 import * as fs from 'fs';
 import { OpenAIEmbedding } from "@llamaindex/openai";
-import { BatchingWeaviateVectorStore } from "./batchingWeaviateVectorStore";
-import { ProgressVectorStoreIndex } from "./progressVectorStoreIndex";
+import { BatchingWeaviateVectorStore } from "./batchingWeaviateVectorStore.js";
+import { ProgressVectorStoreIndex } from "./progressVectorStoreIndex.js";
 
 // unused, but probalby eventually will be used.
 // to be used by postgres store, which it' slooking increasingly like I have to enable again

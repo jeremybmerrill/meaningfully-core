@@ -1,4 +1,4 @@
-import { VectorStoreIndex, VectorIndexOptions as BaseVectorIndexOptions, storageContextFromDefaults, IndexDict } from "llamaindex";
+import { VectorStoreIndex, type VectorIndexOptions as BaseVectorIndexOptions, storageContextFromDefaults, IndexDict } from "llamaindex";
 import { BaseNode, ModalityType, splitNodesByType } from "llamaindex";
 import { addNodesToVectorStores } from "llamaindex";
 

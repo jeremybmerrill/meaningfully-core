@@ -22,6 +22,12 @@ export interface PreviewResult {
   pricePer1M?: number;
 } 
 
+// Type definitions for meaningfully core
+export interface SearchConfig {
+  modelProvider: string
+  modelName: string
+  projectName: string
+}
 
 // Define types for our document set metadata
 export interface DocumentSetMetadata {

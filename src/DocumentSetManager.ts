@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import type { Database as SqliteDatabase } from 'better-sqlite3';
-import type { DocumentSetMetadata, Settings } from './types';
+import type { DocumentSetMetadata, Settings } from './types/index.js';
 import { join } from 'path';
 
 export class DocumentSetManager {

@@ -1,8 +1,8 @@
-import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, persistDocuments, getExistingDocStore } from "../services/embeddings";
-import type { EmbeddingConfig, EmbeddingResult, SearchResult, PreviewResult, Settings, MetadataFilter, Clients} from "../types";
-import { loadDocumentsFromCsv } from "../services/csvLoader";
+import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, persistDocuments, getExistingDocStore } from "../services/embeddings.js";
+import type { EmbeddingConfig, EmbeddingResult, SearchResult, PreviewResult, Settings, MetadataFilter, Clients } from "../types/index.js";
+import { loadDocumentsFromCsv } from "../services/csvLoader.js";
 import { MetadataMode } from "llamaindex";
-import { ProgressManager } from "../services/progressManager";
+import { ProgressManager } from "../services/progressManager.js";
 
 export async function createEmbeddings(
   csvPath: string,
@@ -81,7 +81,7 @@ export async function previewResults(
 
     return {
       success: true,
-      nodes: previewSubsetNodes.map(node => ({
+      nodes: previewSubsetNodes.map((node: any) => ({
         text: node.text,
         metadata: node.metadata
       })),
@@ -112,7 +112,7 @@ export async function search(
   filters?: MetadataFilter[]
 ): Promise<SearchResult[]> {
   const results = await searchDocuments(index, query, numResults, filters);
-  return results.map((result) => ({
+  return results.map((result: any) => ({
     text: result.node.getContent(MetadataMode.NONE),
     score: result.score ?? 0,
     metadata: result.node.metadata,

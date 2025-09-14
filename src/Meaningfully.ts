@@ -1,9 +1,9 @@
-import { DocumentSetManager } from './DocumentSetManager';
-import { loadDocumentsFromCsv } from './services/csvLoader';
-import { createEmbeddings, getIndex, search, previewResults, getDocStore } from './api/embedding';
-import { capitalizeFirstLetter } from './utils';
+import { DocumentSetManager } from './DocumentSetManager.js';
+import { loadDocumentsFromCsv } from './services/csvLoader.js';
+import { createEmbeddings, getIndex, search, previewResults, getDocStore } from './api/embedding.js';
+import { capitalizeFirstLetter } from './utils.js';
 import { join } from 'path';
-import { DocumentSetParams, Settings, MetadataFilter, Clients } from './types';
+import type { DocumentSetParams, Settings, MetadataFilter, Clients } from './types/index.js';
 import fs from 'fs';
 
 type HasFilePath = {filePath: string};
@@ -63,7 +63,10 @@ export class MeaningfullyAPI {
   async generatePreviewData(data: DocumentSetParamsFilePath) {
     const vectorStoreType = this.getVectorStoreType();
     try {
-      return await previewResults(data.filePath, data.textColumns[0], {
+      if (!data.textColumns[0]) {
+        throw new Error("No text column specified for preview.");
+      }
+      return await previewResults(data.filePath, data.textColumns[0] as string, {
         modelName: data.modelName, // needed to tokenize, estimate costs
         modelProvider: data.modelProvider,
         splitIntoSentences: data.splitIntoSentences,
