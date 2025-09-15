@@ -1,5 +1,5 @@
 import type { DocumentSetMetadata, Settings } from './types';
-export declare class DocumentSetManager {
+export declare class MetadataManager {
     private sqliteDb;
     constructor(storagePath: string);
     private initializeDatabase;

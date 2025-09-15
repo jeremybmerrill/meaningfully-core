@@ -1,4 +1,4 @@
-import { DocumentSetManager } from './DocumentSetManager.js';
+import { MetadataManager } from './MetadataManager.js';
 import { loadDocumentsFromCsv } from './services/csvLoader.js';
 import { createEmbeddings, getIndex, search, previewResults, getDocStore } from './api/embedding.js';
 import { capitalizeFirstLetter } from './utils.js';
@@ -16,13 +16,13 @@ const maskKey = (key: string | null, n: number = 20): string | null => {
 
 
 export class MeaningfullyAPI {
-  private manager: DocumentSetManager;
+  private manager: MetadataManager;
   private storagePath: string;
   private clients: Clients;
 
-  constructor({ storagePath, weaviateClient }: { storagePath: string, weaviateClient?: any }) {
+  constructor({ storagePath, weaviateClient, metadataManager }: { storagePath: string, weaviateClient?: any, metadataManager: MetadataManager }) {
     this.storagePath = storagePath;
-    this.manager = new DocumentSetManager(this.storagePath);
+    this.manager = metadataManager;
     this.clients = {
       weaviateClient: weaviateClient,
       postgresClient: null

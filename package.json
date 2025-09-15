@@ -17,7 +17,6 @@
     "test": "vitest --silent=false --disable-console-intercept"
   },
   "dependencies": {
-    "llamaindex": "^0.11.14",
     "@llamaindex/azure": "^0.1.31",
     "@llamaindex/google": "^0.3.18",
     "@llamaindex/mistral": "^0.1.14",
@@ -25,18 +24,18 @@
     "@llamaindex/openai": "^0.4.14",
     "@llamaindex/postgres": "^0.0.64",
     "@llamaindex/weaviate": "^0.0.36",
-    "better-sqlite3": "^11.8.1",
     "js-tiktoken": "^1.0.8",
+    "llamaindex": "^0.11.14",
     "lodash": "^4.17.21",
     "natural": "^8.1.0",
     "openai": "^5.9.0",
     "papaparse": "^5.5.3"
-
   },
   "devDependencies": {
+    "@types/node": "^20.5.6",
+    "@types/papaparse": "^5.3.16",
     "typescript": "^5.7.3",
     "vite": "^5.4.4",
-    "vitest": "^3.0.8",
-    "@types/node": "^20.5.6"
-    }
+    "vitest": "^3.0.8"
+  }
 }
