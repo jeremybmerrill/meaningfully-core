@@ -9,7 +9,9 @@ import fs from 'fs';
 type HasFilePath = {filePath: string};
 type DocumentSetParamsFilePath = DocumentSetParams & HasFilePath;
 
-const maskKey = (key: string | null, n: number = 20): string | null => {
+const MASKING_PREFIX_LENGTH = 8; // how many characters to show at the start and end of an API key when masking it for display
+                                  // Gemini API keys are 39 chars; Mistral is 32, so MASKING_PREFIX_LENGTH must be < 16 for ANYTHING to be masked.
+const maskKey = (key: string | null, n: number = MASKING_PREFIX_LENGTH): string | null => {
   if (!key) return null;
   return (key.length > (n*2)) ? key.slice(0, n) + "*******" + key.slice(key.length - n) : key;
 };
