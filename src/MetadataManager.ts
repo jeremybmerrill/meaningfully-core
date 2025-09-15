@@ -2,6 +2,10 @@ import type { DocumentSetMetadata, Settings } from './types/index.js';
 
 export abstract class MetadataManager {
   protected queries = {
+    /* 
+    Note: RETURNING on non-select/non-create statements is important for compatibility between SQLite and PostgreSQL.
+    (Without it, better-sqlite would demand to use run() instead of all() or get(), which would break the abstraction.)
+    */
     createDocumentSetsTable: `
       CREATE TABLE IF NOT EXISTS document_sets (
         set_id SERIAL PRIMARY KEY,
@@ -31,10 +35,10 @@ export abstract class MetadataManager {
       SELECT COUNT(*) as count FROM document_sets
     `,
     updateDocumentCount: `
-      UPDATE document_sets SET total_documents = total_documents + $1 WHERE set_id = $2
+      UPDATE document_sets SET total_documents = total_documents + $1 WHERE set_id = $2 RETURNING *
     `,
     deleteDocumentSet: `
-      DELETE FROM document_sets WHERE set_id = $1
+      DELETE FROM document_sets WHERE set_id = $1 RETURNING *
     `,
     selectSettings: `
       SELECT * FROM meaningfully_settings WHERE settings_id = 1
@@ -42,8 +46,12 @@ export abstract class MetadataManager {
     upsertSettings: `
       INSERT INTO meaningfully_settings (settings_id, settings)
       VALUES (1, $1)
-      ON CONFLICT (settings_id) DO UPDATE SET settings = $1
-    `
+      ON CONFLICT (settings_id) DO UPDATE SET settings = $2
+      RETURNING *
+    `     
+    // the two arguments $1 and $2 are identical, but, to work around a cross-compatibility bug in SQLite versus Postgresql,
+    // where PG can accept the same argument twice (specified as $1 in two places), but SQLITE cannot (it just has ? placeholders)
+    // they are specified separately.
   };
 
   protected abstract runQuery<T>(query: string, params?: any[]): Promise<T[]>;
@@ -129,7 +137,9 @@ export abstract class MetadataManager {
   }
 
   async setSettings(settings: Settings): Promise<{ success: boolean }> {
-    await this.runQuery(this.queries.upsertSettings, [JSON.stringify(settings)]);
+    // the JSON.stringify(settings) is repeated to work around a cross-compatibility bug in SQLite versus Postgresql
+    // where PG can accept the same argument twice (specified as $1 in two places), but SQLITE cannot (it just has ? placeholders)
+    await this.runQuery(this.queries.upsertSettings, [JSON.stringify(settings), JSON.stringify(settings)]);
     return { success: true };
   }
 }
