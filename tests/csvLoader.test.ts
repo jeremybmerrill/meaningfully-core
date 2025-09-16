@@ -1,7 +1,7 @@
 //@ts-nocheck
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'fs';
-import { loadDocumentsFromCsv } from './csvLoader';
+import { loadDocumentsFromCsv } from '../src/services/csvLoader.js';
 import { Document } from 'llamaindex';
 import Papa from 'papaparse';
 

@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Document, TextNode } from 'llamaindex';
 
 // First, set up the mock before importing the module
-vi.mock(import("./embeddings"), async (importOriginal) => {
+vi.mock(import("../src/services/embeddings.js"), async (importOriginal) => {
   const actual = await importOriginal()
   return {
     ...actual,
@@ -19,7 +19,7 @@ vi.mock(import("./embeddings"), async (importOriginal) => {
 })
 
 // Now import the mocked functions
-import { transformDocumentsToNodes, getEmbedModel } from './embeddings';
+import { transformDocumentsToNodes, getEmbedModel } from '../src/services/embeddings.js';
 
 describe('transformDocumentsToNodes', () => {
   beforeEach(() => {

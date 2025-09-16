@@ -1,15 +1,15 @@
 //@ts-nocheck
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createEmbeddings, previewResults, getDocStore, getIndex, search } from './embedding';
-import { loadDocumentsFromCsv } from '../services/csvLoader';
-import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, getExistingDocStore } from '../services/embeddings';
+import { createEmbeddings, previewResults, getDocStore, getIndex, search } from '../src/api/embedding.js';
+import { loadDocumentsFromCsv } from '../src/services/csvLoader.js';
+import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, getExistingDocStore } from '../src/services/embeddings.js';
 import { MetadataMode } from 'llamaindex';
 
 // filepath: /Users/jeremybmerrill/code/meaningfully/src/main/api/embedding.test.ts
 
 
-vi.mock('../services/csvLoader');
-vi.mock('../services/embeddings');
+vi.mock('../src/services/csvLoader');
+vi.mock('../src/services/embeddings');
 
 describe('embedding.ts', () => {
     describe('createEmbeddings', () => {
@@ -262,7 +262,7 @@ describe('embedding.ts', () => {
 
       it('should correctly track progress through ProgressManager', async () => {
         // Setup
-        vi.mock('../services/progressManager', () => {
+        vi.mock('../src/services/progressManager', () => {
           const mockInstance = {
             startOperation: vi.fn(),
             updateProgress: vi.fn(),
@@ -278,8 +278,8 @@ describe('embedding.ts', () => {
         });
         
         // Re-import to use mocked version
-        const { createEmbeddings } = await import('./embedding');
-        const { ProgressManager } = await import('../services/progressManager');
+        const { createEmbeddings } = await import('../src/api/embedding.js');
+        const { ProgressManager } = await import('../src/services/progressManager.js');
         
         const mockDocuments = [{ text: 'doc1' }, { text: 'doc2' }];
         const mockNodes = [{ text: 'node1', metadata: {} }];
@@ -305,7 +305,7 @@ describe('embedding.ts', () => {
 
       it('should properly calculate percentage in progress callback', async () => {
         // Setup mocks with spy on updateProgress
-        vi.mock('../services/progressManager', () => {
+        vi.mock('../src/services/progressManager', () => {
           const mockInstance = {
             startOperation: vi.fn(),
             updateProgress: vi.fn(),
@@ -321,8 +321,8 @@ describe('embedding.ts', () => {
         });
         
         // Re-import to use mocked version
-        const { createEmbeddings } = await import('./embedding');
-        const { ProgressManager } = await import('../services/progressManager');
+        const { createEmbeddings } = await import('../src/api/embedding.js');
+        const { ProgressManager } = await import('../src/services/progressManager.js');
 
         const mockDocuments = [{ text: 'doc1' }];
         const mockNodes = [{ text: 'node1', metadata: {} }];
@@ -355,7 +355,7 @@ describe('embedding.ts', () => {
 
       it('should clear operation on empty documents', async () => {
         // Setup
-        vi.mock('../services/progressManager', () => {
+        vi.mock('../src/services/progressManager', () => {
           const mockInstance = {
             startOperation: vi.fn(),
             updateProgress: vi.fn(),
@@ -371,8 +371,8 @@ describe('embedding.ts', () => {
         });
         
         // Re-import to use mocked version
-        const { createEmbeddings } = await import('./embedding');
-        const { ProgressManager } = await import('../services/progressManager');
+        const { createEmbeddings } = await import('../src/api/embedding.js');
+        const { ProgressManager } = await import('../src/services/progressManager.js');
 
         loadDocumentsFromCsv.mockResolvedValue([]);
         
@@ -390,7 +390,7 @@ describe('embedding.ts', () => {
 
       it('shoulde complete operation on successful embedding', async () => {
         // Setup
-        vi.mock('../services/progressManager', () => {
+        vi.mock('../src/services/progressManager', () => {
           const mockInstance = {
             startOperation: vi.fn(),
             updateProgress: vi.fn(),
@@ -406,8 +406,8 @@ describe('embedding.ts', () => {
         });
         
         // Re-import to use mocked version
-        const { createEmbeddings } = await import('./embedding');
-        const { ProgressManager } = await import('../services/progressManager');
+        const { createEmbeddings } = await import('../src/api/embedding.js');
+        const { ProgressManager } = await import('../src/services/progressManager.js');
 
         const mockDocuments = [{ text: 'doc1' }];
         const mockNodes = [{ text: 'node1', metadata: {} }];
