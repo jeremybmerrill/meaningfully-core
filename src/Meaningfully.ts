@@ -22,12 +22,12 @@ export class MeaningfullyAPI {
   private storagePath: string;
   private clients: Clients;
 
-  constructor({ storagePath, weaviateClient, metadataManager }: { storagePath: string, weaviateClient?: any, metadataManager: MetadataManager }) {
+  constructor({ storagePath, weaviateClient, metadataManager, postgresClient }: { storagePath: string, weaviateClient?: any, metadataManager: MetadataManager, postgresClient?: any }) {
     this.storagePath = storagePath;
     this.manager = metadataManager;
     this.clients = {
       weaviateClient: weaviateClient,
-      postgresClient: null
+      postgresClient: postgresClient
     };
   }
 

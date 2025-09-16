@@ -16,7 +16,7 @@ import {
 import { OllamaEmbedding} from '@llamaindex/ollama'
 import { MistralAIEmbedding, MistralAIEmbeddingModelType } from '@llamaindex/mistral'
 import { GeminiEmbedding } from '@llamaindex/google'
-import { PGVectorStore } from '@llamaindex/postgres';
+import { PGVectorStore, PostgresDocumentStore } from '@llamaindex/postgres';
 import { AzureOpenAIEmbedding } from "@llamaindex/azure";
 import { Sploder } from "./sploder.js";
 import { CustomSentenceSplitter } from "./sentenceSplitter.js";
@@ -115,7 +115,7 @@ export async function getExistingVectorStoreIndex(config: EmbeddingConfig, setti
         throw new Error("Postgres client required but not provided");
       }
       const pgStore = new PGVectorStore({
-        clientConfig: { connectionString: process.env.POSTGRES_CONNECTION_STRING }, 
+        client: clients.postgresClient,
         tableName: sanitizeProjectName(config.projectName),
         dimensions: MODEL_DIMENSIONS[config.modelName] || 1536, // default to 1536 if model not found
         embeddingModel: embedModel
@@ -152,23 +152,23 @@ export async function getExistingVectorStoreIndex(config: EmbeddingConfig, setti
 }
 
 export async function getExistingDocStore(config: EmbeddingConfig) {
-  // switch (config.vectorStoreType) {
-  //   case "simple":
+  switch (config.vectorStoreType) {
+    case "simple":
+    case "weaviate":
+      // both simple and weaviate use the same doc store type
+      // so we can just use the simple doc store for both
       const persistDir = join(config.storagePath, sanitizeProjectName(config.projectName) );
       const storageContext = await storageContextFromDefaults({
         persistDir: persistDir,
       });
       return storageContext.docStore;
-
-  //   case "postgres":
-  //     throw new Error(`Not yet implemented vector store type: ${config.vectorStoreType}`);
-  //     // return await createVectorStore(config);
-  //   default:
-  //     throw new Error(`Unsupported vector store type: ${config.vectorStoreType}`);
-  // }
+    case "postgres":
+      throw new Error(`Not yet implemented vector store type: ${config.vectorStoreType}`);
+      // return await createVectorStore(config);
+    default:
+      throw new Error(`Unsupported vector store type: ${config.vectorStoreType}`);
+  }
 }
-
-
 
 export async function transformDocumentsToNodes(
   documents: Document[],
@@ -251,19 +251,42 @@ export async function getStorageContext(config: EmbeddingConfig, settings: Setti
   const vectorStore = await createVectorStore(config, settings, clients);
   fs.mkdirSync(config.storagePath, { recursive: true }); 
   const persistDir = join(config.storagePath, sanitizeProjectName(config.projectName) );
-  return await storageContextFromDefaults({
-    persistDir: persistDir,
-    vectorStores: {[ModalityType.TEXT]: vectorStore},
-    docStore: new SimpleDocumentStore()
-      /*
-        if docStore is created with a persist path (as it is by default in storageContextFromDefaults)
-        then it will write to disk after every put(), which happens 2+ times per document.
+  switch (config.vectorStoreType) {
+    case "simple":
+    case "weaviate":
+      // both simple and weaviate use the same doc store type
+      // so we can just use the simple doc store for both
+      return await storageContextFromDefaults({
+        persistDir: persistDir,
+        vectorStores: {[ModalityType.TEXT]: vectorStore},
+        docStore: new SimpleDocumentStore()
+        /*
+          if docStore is created with a persist path (as it is by default in storageContextFromDefaults)
+          then it will write to disk after every put(), which happens 2+ times per document.
 
-        so we create it without a persist path, and then explicitly persist it when we're done adding documents.
+          so we create it without a persist path, and then explicitly persist it when we're done adding documents.
 
-        see https://github.com/jeremybmerrill/meaningfully/issues/52
-      */
-  });
+          see https://github.com/jeremybmerrill/meaningfully/issues/52
+        */
+      });
+    case "postgres":
+      if (!clients.postgresClient) {
+        throw new Error("Postgres client required but not provided");
+      }
+      return await storageContextFromDefaults({
+        vectorStores: {[ModalityType.TEXT]: vectorStore},
+        docStore: new PostgresDocumentStore({
+          client: clients.postgresClient,
+          tableName: "docs_" + sanitizeProjectName(config.projectName),
+        }) 
+        /*
+          PostgresDocumentStore does not have a persist method, it persists automatically
+        */
+      });
+    default: 
+      throw new Error(`Unsupported vector store type: ${config.vectorStoreType}`);
+    
+  }
 }
 
 export async function persistDocuments(documents: Document[], config: EmbeddingConfig, settings: Settings, clients: Clients): Promise<void> {
@@ -327,7 +350,7 @@ async function createVectorStore(config: EmbeddingConfig, settings: Settings, cl
     case "postgres":
       return new PGVectorStore({
         clientConfig: {connectionString: process.env.POSTGRES_CONNECTION_STRING},
-        tableName: sanitizeProjectName(config.projectName),
+        tableName: "vecs_" + sanitizeProjectName(config.projectName),
         dimensions: MODEL_DIMENSIONS[config.modelName] || 1536, // default to 1536 if model not found
         embeddingModel: embeddingModel
       });
