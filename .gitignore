@@ -3,7 +3,7 @@
 
 # build stuff
 node_modules
-dist
+# dist # temporarily include dist for github installs.
 out
 e2e/test-storage/metadata.db
 e2e/test-storage/sources-george4x.csv
