@@ -1,6 +1,6 @@
 //@ts-nocheck
 import { expect, test } from 'vitest'
-import { CustomSentenceSplitter } from '../src/services/sentenceSplitter.js'
+import { CustomSentenceSplitter } from '../sentenceSplitter.js'
 import { SentenceSplitter, IngestionPipeline, Document } from "llamaindex";
 
 // do these tests just to make sure that we can factor out my hacky fixes when llamaindex is fixed.
