@@ -23,7 +23,7 @@ export declare class MeaningfullyAPI {
     deleteDocumentSet(documentSetId: number): Promise<{
         success: boolean;
     }>;
-    getVectorStoreType(): "weaviate" | "simple";
+    getVectorStoreType(): "simple" | "weaviate";
     generatePreviewData(data: DocumentSetParamsFilePath): Promise<import("./types/index.js").PreviewResult>;
     uploadCsv(data: DocumentSetParamsFilePath): Promise<{
         success: boolean;
