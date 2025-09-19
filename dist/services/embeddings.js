@@ -207,7 +207,7 @@ export async function persistNodes(nodes, config, settings, clients, progressCal
         }
         else if (vectorStore instanceof PGVectorStore || vectorStore instanceof BatchingWeaviateVectorStore) {
             // WeaviateVectorStore does not have a persist method, it persists automatically
-            console.log("Pretending to persist Weaviate vector store, but it actually persists automatically.");
+            console.log("Pretending to persist Weaviate or Postgres vector store, but it actually persists automatically.");
         }
         else {
             throw new Error("Vector store does not support persist method");
