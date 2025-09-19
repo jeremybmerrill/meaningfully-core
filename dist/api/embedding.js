@@ -1,4 +1,4 @@
-import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, persistDocuments, getExistingDocStore } from "../services/embeddings.js";
+import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, persistDocuments, getStorageContext } from "../services/embeddings.js";
 import { loadDocumentsFromCsv } from "../services/csvLoader.js";
 import { MetadataMode } from "llamaindex";
 import { ProgressManager } from "../services/progressManager.js";
@@ -75,8 +75,8 @@ export async function previewResults(csvPath, textColumnName, config) {
         };
     }
 }
-export async function getDocStore(config) {
-    return await getExistingDocStore(config);
+export async function getDocStore(config, settings, clients) {
+    return (await getStorageContext(config, settings, clients)).docStore;
 }
 export async function getIndex(config, settings, clients) {
     return await getExistingVectorStoreIndex(config, settings, clients);

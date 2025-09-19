@@ -22,12 +22,12 @@ export class MeaningfullyAPI {
   private storagePath: string;
   private clients: Clients;
 
-  constructor({ storagePath, weaviateClient, metadataManager }: { storagePath: string, weaviateClient?: any, metadataManager: MetadataManager }) {
+  constructor({ storagePath, weaviateClient, postgresClient, metadataManager }: { storagePath: string, weaviateClient?: any, postgresClient?: any, metadataManager: MetadataManager }) {
     this.storagePath = storagePath;
     this.manager = metadataManager;
     this.clients = {
       weaviateClient: weaviateClient,
-      postgresClient: null
+      postgresClient: postgresClient
     };
   }
 
@@ -58,8 +58,11 @@ export class MeaningfullyAPI {
     return { success: true };
   }
 
+  // TODO: this is an awful hack.
+  // I don't really want to have it be an argument to the constructor
+  // maybe I should make clients accept EITHER, not both?
   getVectorStoreType() {
-    return this.clients.weaviateClient ? 'weaviate' : 'simple';
+    return this.clients.postgresClient ? 'postgres' : (this.clients.weaviateClient ? 'weaviate' : 'simple');
   }
 
   async generatePreviewData(data: DocumentSetParamsFilePath) {
@@ -79,7 +82,7 @@ export class MeaningfullyAPI {
         storagePath: this.storagePath,
         chunkSize: data.chunkSize,
         chunkOverlap: data.chunkOverlap
-    });
+      });
   } catch (error) {
     throw error;
   }
@@ -171,6 +174,7 @@ export class MeaningfullyAPI {
 
   async getDocument(documentSetId: number, documentNodeId: string){
     const documentSet = await this.manager.getDocumentSet(documentSetId);
+    const settings = await this.manager.getSettings();
     if (!documentSet) {
       throw new Error('Document set not found');
     } 
@@ -185,7 +189,7 @@ export class MeaningfullyAPI {
       storagePath: this.storagePath,
       chunkSize: 1024, // not actually used, we just re-use a config object that has this option
       chunkOverlap: 20, // not actually used, we just re-use a config object that has this option
-    });
+    }, settings, this.clients);
     const document = await docStore.getNode(documentNodeId);
     if (!document) {
       throw new Error('Document not found');

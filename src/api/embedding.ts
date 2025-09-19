@@ -1,4 +1,4 @@
-import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, persistDocuments, getExistingDocStore } from "../services/embeddings.js";
+import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, persistDocuments, getStorageContext } from "../services/embeddings.js";
 import type { EmbeddingConfig, EmbeddingResult, SearchResult, PreviewResult, Settings, MetadataFilter, Clients } from "../types/index.js";
 import { loadDocumentsFromCsv } from "../services/csvLoader.js";
 import { MetadataMode } from "llamaindex";
@@ -97,8 +97,8 @@ export async function previewResults(
   }
 } 
 
-export async function getDocStore(config: EmbeddingConfig) {
-  return await getExistingDocStore(config);
+export async function getDocStore(config: EmbeddingConfig, settings: Settings, clients: Clients) {
+  return (await getStorageContext(config, settings, clients)).docStore;
 }
 
 export async function getIndex(config: EmbeddingConfig, settings: Settings, clients: Clients) {

@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createEmbeddings, previewResults, getDocStore, getIndex, search } from '../embedding.js';
 import { loadDocumentsFromCsv } from '../../services/csvLoader.js';
-import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, getExistingDocStore } from '../../services/embeddings.js';
+import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, getStorageContext } from '../../services/embeddings.js';
 import { MetadataMode } from 'llamaindex';
 
 // filepath: /Users/jeremybmerrill/code/meaningfully/src/main/api/embedding.test.ts
@@ -82,9 +82,9 @@ describe('embedding.ts', () => {
     describe('getDocStore', () => {
         it('should return existing doc store', async () => {
             const mockDocStore = 'docStore';
-            getExistingDocStore.mockResolvedValue(mockDocStore);
+            getStorageContext.mockResolvedValue({ docStore: mockDocStore });
 
-            const result = await getDocStore({});
+            const result = await getDocStore({}, {}, {});
 
             expect(result).toBe(mockDocStore);
         });
@@ -173,7 +173,7 @@ describe('embedding.ts', () => {
   describe('getDocStore', () => {
     it('should return existing doc store', async () => {
       const mockDocStore = 'docStore';
-      getExistingDocStore.mockResolvedValue(mockDocStore);
+      getStorageContext.mockResolvedValue({ docStore: mockDocStore });
 
       const result = await getDocStore({});
 

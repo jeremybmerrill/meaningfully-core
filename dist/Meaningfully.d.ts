@@ -8,9 +8,10 @@ export declare class MeaningfullyAPI {
     private manager;
     private storagePath;
     private clients;
-    constructor({ storagePath, weaviateClient, metadataManager }: {
+    constructor({ storagePath, weaviateClient, postgresClient, metadataManager }: {
         storagePath: string;
         weaviateClient?: any;
+        postgresClient?: any;
         metadataManager: MetadataManager;
     });
     setClients(clients: Clients): void;
@@ -23,7 +24,7 @@ export declare class MeaningfullyAPI {
     deleteDocumentSet(documentSetId: number): Promise<{
         success: boolean;
     }>;
-    getVectorStoreType(): "simple" | "weaviate";
+    getVectorStoreType(): "simple" | "postgres" | "weaviate";
     generatePreviewData(data: DocumentSetParamsFilePath): Promise<import("./types/index.js").PreviewResult>;
     uploadCsv(data: DocumentSetParamsFilePath): Promise<{
         success: boolean;

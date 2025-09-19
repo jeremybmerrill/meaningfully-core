@@ -12,7 +12,6 @@ export declare function estimateCost(nodes: TextNode[], modelName: string): {
     pricePer1M: number;
 };
 export declare function getExistingVectorStoreIndex(config: EmbeddingConfig, settings: Settings, clients: Clients): Promise<VectorStoreIndex>;
-export declare function getExistingDocStore(config: EmbeddingConfig): Promise<import("llamaindex").BaseDocumentStore>;
 export declare function transformDocumentsToNodes(documents: Document[], config: EmbeddingConfig): Promise<TextNode<import("llamaindex").Metadata>[]>;
 export declare function getEmbedModel(config: EmbeddingConfig, settings: Settings): MockEmbedding | OpenAIEmbedding | OllamaEmbedding | MistralAIEmbedding | GeminiEmbedding;
 export declare function getStorageContext(config: EmbeddingConfig, settings: Settings, clients: Clients): Promise<StorageContext>;

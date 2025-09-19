@@ -57,6 +57,8 @@ export interface EmbeddingConfig {
   modelName: string;
   modelProvider: string
   vectorStoreType: "simple" | "postgres" | "weaviate";
+  documentStoreType?: "simple" | "postgres";
+  indexStoreType?: "simple" | "postgres";
   projectName: string;
   storagePath: string;
   splitIntoSentences: boolean;
