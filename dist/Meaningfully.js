@@ -1,6 +1,6 @@
 import { loadDocumentsFromCsv } from './services/csvLoader.js';
 import { createEmbeddings, getIndex, search, previewResults, getDocStore } from './api/embedding.js';
-import { capitalizeFirstLetter } from './utils.js';
+import { sanitizeProjectName, capitalizeFirstLetter } from "./utils.js";
 import { join } from 'path';
 import fs from 'fs';
 const MASKING_PREFIX_LENGTH = 8; // how many characters to show at the start and end of an API key when masking it for display
@@ -11,12 +11,12 @@ const maskKey = (key, n = MASKING_PREFIX_LENGTH) => {
     return (key.length > (n * 2)) ? key.slice(0, n) + "*******" + key.slice(key.length - n) : key;
 };
 export class MeaningfullyAPI {
-    manager;
+    metadataManager;
     storagePath;
     clients;
     constructor({ storagePath, weaviateClient, postgresClient, metadataManager }) {
         this.storagePath = storagePath;
-        this.manager = metadataManager;
+        this.metadataManager = metadataManager;
         this.clients = {
             weaviateClient: weaviateClient,
             postgresClient: postgresClient
@@ -29,20 +29,46 @@ export class MeaningfullyAPI {
         return this.clients;
     }
     async listDocumentSets(page = 1, pageSize = 10) {
-        return await this.manager.getDocumentSets(page, pageSize);
+        return await this.metadataManager.getDocumentSets(page, pageSize);
     }
     async getDocumentSet(documentSetId) {
-        return await this.manager.getDocumentSet(documentSetId);
+        return await this.metadataManager.getDocumentSet(documentSetId);
     }
     async deleteDocumentSet(documentSetId) {
         // Delete the document set from the database
-        const result = await this.manager.getDocumentSet(documentSetId);
+        const result = await this.metadataManager.getDocumentSet(documentSetId);
         if (result) {
             // Delete the document set from the database
-            await this.manager.deleteDocumentSet(documentSetId);
+            await this.metadataManager.deleteDocumentSet(documentSetId);
             // Delete the associated files from the filesystem
-            fs.rmSync(join(this.storagePath, result.name), { recursive: true, force: true });
-            fs.rmSync(join(this.storagePath, 'weaviate_data', capitalizeFirstLetter(result.name)), { recursive: true, force: true });
+            if (result.parameters.vectorStoreType === 'postgres') {
+                if (this.clients.postgresClient) {
+                    try {
+                        await this.clients.postgresClient.query('DROP TABLE IF EXISTS vecs_' + sanitizeProjectName(result.name));
+                        await this.clients.postgresClient.query('DROP TABLE IF EXISTS docs_' + sanitizeProjectName(result.name));
+                        await this.clients.postgresClient.query('DROP TABLE IF EXISTS idx_' + sanitizeProjectName(result.name));
+                    }
+                    catch (error) {
+                        console.error(`Error deleting Postgres tables for ${sanitizeProjectName(result.name)}`, error);
+                    }
+                }
+            }
+            else if (result.parameters.vectorStoreType === 'weaviate') {
+                if (this.clients.weaviateClient) {
+                    try {
+                        await this.clients.weaviateClient.schema.classDeleter().withClassName(capitalizeFirstLetter(result.name)).do();
+                    }
+                    catch (error) {
+                        console.error("Error deleting Weaviate class:", error);
+                    }
+                }
+                // Remove the directory and its contents
+                fs.rmSync(join(this.storagePath, result.name), { recursive: true, force: true });
+                fs.rmSync(join(this.storagePath, 'weaviate_data', capitalizeFirstLetter(result.name)), { recursive: true, force: true });
+            }
+            else {
+                fs.rmSync(join(this.storagePath, result.name), { recursive: true, force: true });
+            }
         }
         return { success: true };
     }
@@ -79,7 +105,7 @@ export class MeaningfullyAPI {
         // figure out if weaviate is available
         const vectorStoreType = this.getVectorStoreType();
         // First create the document set record
-        const documentSetId = await this.manager.addDocumentSet({
+        const documentSetId = await this.metadataManager.addDocumentSet({
             name: data.datasetName,
             uploadDate: new Date(),
             parameters: {
@@ -97,14 +123,14 @@ export class MeaningfullyAPI {
             },
             totalDocuments: 0 // We'll update this after processing
         });
-        const embedSettings = await this.manager.getSettings();
+        const embedSettings = await this.metadataManager.getSettings();
         // Load and process the documents
         try {
             // Process each text column
             for (const textColumn of data.textColumns) {
                 const documents = await loadDocumentsFromCsv(data.filePath, textColumn);
                 // Update total documents count
-                await this.manager.updateDocumentCount(documentSetId, documents.length);
+                await this.metadataManager.updateDocumentCount(documentSetId, documents.length);
                 // Create embeddings for this column
                 let ret = await createEmbeddings(data.filePath, textColumn, {
                     modelName: data.modelName,
@@ -127,14 +153,14 @@ export class MeaningfullyAPI {
         }
         catch (error) {
             // If something fails, we should probably delete the document set
-            await this.manager.deleteDocumentSet(documentSetId);
+            await this.metadataManager.deleteDocumentSet(documentSetId);
             console.error("deleting document set due to failure ", documentSetId, error);
             throw error;
         }
     }
     async searchDocumentSet(documentSetId, query, n_results = 10, filters) {
-        const documentSet = await this.manager.getDocumentSet(documentSetId);
-        const settings = await this.manager.getSettings();
+        const documentSet = await this.metadataManager.getDocumentSet(documentSetId);
+        const settings = await this.metadataManager.getSettings();
         if (!documentSet) {
             throw new Error('Document set not found');
         }
@@ -154,8 +180,8 @@ export class MeaningfullyAPI {
         return results;
     }
     async getDocument(documentSetId, documentNodeId) {
-        const documentSet = await this.manager.getDocumentSet(documentSetId);
-        const settings = await this.manager.getSettings();
+        const documentSet = await this.metadataManager.getDocumentSet(documentSetId);
+        const settings = await this.metadataManager.getSettings();
         if (!documentSet) {
             throw new Error('Document set not found');
         }
@@ -178,13 +204,13 @@ export class MeaningfullyAPI {
         return document;
     }
     async getSettings() {
-        return this.manager.getSettings();
+        return this.metadataManager.getSettings();
     }
     async setSettings(settings) {
-        return this.manager.setSettings(settings);
+        return this.metadataManager.setSettings(settings);
     }
     async getMaskedSettings() {
-        const settings = await this.manager.getSettings();
+        const settings = await this.metadataManager.getSettings();
         return {
             openAIKey: maskKey(settings.openAIKey),
             oLlamaBaseURL: settings.oLlamaBaseURL,
@@ -196,7 +222,7 @@ export class MeaningfullyAPI {
         };
     }
     async setMaskedSettings(newSettings) {
-        const oldSettings = await this.manager.getSettings();
+        const oldSettings = await this.metadataManager.getSettings();
         const settings = {
             ...newSettings,
             openAIKey: newSettings.openAIKey == maskKey(oldSettings.openAIKey) ? oldSettings.openAIKey : newSettings.openAIKey,
@@ -204,7 +230,7 @@ export class MeaningfullyAPI {
             mistralApiKey: newSettings.mistralApiKey == maskKey(oldSettings.mistralApiKey) ? oldSettings.mistralApiKey : newSettings.mistralApiKey,
             geminiApiKey: newSettings.geminiApiKey == maskKey(oldSettings.geminiApiKey) ? oldSettings.geminiApiKey : newSettings.geminiApiKey
         };
-        return this.manager.setSettings(settings);
+        return this.metadataManager.setSettings(settings);
     }
 }
 //# sourceMappingURL=Meaningfully.js.map

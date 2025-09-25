@@ -5,7 +5,7 @@ type HasFilePath = {
 };
 type DocumentSetParamsFilePath = DocumentSetParams & HasFilePath;
 export declare class MeaningfullyAPI {
-    private manager;
+    private metadataManager;
     private storagePath;
     private clients;
     constructor({ storagePath, weaviateClient, postgresClient, metadataManager }: {
