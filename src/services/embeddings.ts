@@ -262,7 +262,8 @@ export async function persistNodes(nodes: TextNode[], config: EmbeddingConfig, s
   return index;
 }
 
-async function createVectorStore(config: EmbeddingConfig, settings: Settings, clients: Clients): Promise<PGVectorStore | SimpleVectorStore | BatchingWeaviateVectorStore> {
+// exported only for tests
+export async function createVectorStore(config: EmbeddingConfig, settings: Settings, clients: Clients): Promise<PGVectorStore | SimpleVectorStore | BatchingWeaviateVectorStore> {
   const embeddingModel = getEmbedModel(config, settings);
   switch (config.vectorStoreType) {
 
@@ -301,7 +302,8 @@ async function createVectorStore(config: EmbeddingConfig, settings: Settings, cl
   }
 }
 
-async function createDocumentStore(config: EmbeddingConfig, settings: Settings, clients: Clients): Promise<BaseDocumentStore> {
+// exported only for tests
+export async function createDocumentStore(config: EmbeddingConfig, settings: Settings, clients: Clients): Promise<BaseDocumentStore> {
   // we create the doc store without a persist path, so it doesn't write to disk after every put()
   switch (config.documentStoreType || config.vectorStoreType) {
     case "postgres":
@@ -317,7 +319,8 @@ async function createDocumentStore(config: EmbeddingConfig, settings: Settings, 
   }
 }
 
-async function createIndexStore(config: EmbeddingConfig, settings: Settings, clients: Clients): Promise<BaseIndexStore> {
+// exported only for tests
+export async function createIndexStore(config: EmbeddingConfig, settings: Settings, clients: Clients): Promise<BaseIndexStore> {
   switch (config.documentStoreType || config.vectorStoreType) {
     case "postgres":
       return new PostgresIndexStore({

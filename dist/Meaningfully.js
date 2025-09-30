@@ -44,9 +44,9 @@ export class MeaningfullyAPI {
             if (result.parameters.vectorStoreType === 'postgres') {
                 if (this.clients.postgresClient) {
                     try {
-                        await this.clients.postgresClient.query('DROP TABLE IF EXISTS vecs_' + sanitizeProjectName(result.name));
-                        await this.clients.postgresClient.query('DROP TABLE IF EXISTS docs_' + sanitizeProjectName(result.name));
-                        await this.clients.postgresClient.query('DROP TABLE IF EXISTS idx_' + sanitizeProjectName(result.name));
+                        await this.deletePostgresVectorStore(result.name);
+                        await this.deletePostgresIndexStore(result.name);
+                        await this.deletePostgresDocStore(result.name);
                     }
                     catch (error) {
                         console.error(`Error deleting Postgres tables for ${sanitizeProjectName(result.name)}`, error);
@@ -56,18 +56,23 @@ export class MeaningfullyAPI {
             else if (result.parameters.vectorStoreType === 'weaviate') {
                 if (this.clients.weaviateClient) {
                     try {
-                        await this.clients.weaviateClient.schema.classDeleter().withClassName(capitalizeFirstLetter(result.name)).do();
+                        await this.deleteWeaviateVectorStore(result.name);
                     }
                     catch (error) {
                         console.error("Error deleting Weaviate class:", error);
                     }
                 }
+                else {
+                    this.deleteSimpleVectorStore(result.name);
+                }
                 // Remove the directory and its contents
-                fs.rmSync(join(this.storagePath, result.name), { recursive: true, force: true });
-                fs.rmSync(join(this.storagePath, 'weaviate_data', capitalizeFirstLetter(result.name)), { recursive: true, force: true });
+                this.deleteSimpleDocStore(result.name);
+                this.deleteSimpleIndexStore(result.name);
             }
             else {
-                fs.rmSync(join(this.storagePath, result.name), { recursive: true, force: true });
+                this.deleteSimpleDocStore(result.name);
+                this.deleteSimpleIndexStore(result.name);
+                this.deleteSimpleVectorStore(result.name);
             }
         }
         return { success: true };
@@ -84,6 +89,7 @@ export class MeaningfullyAPI {
             if (!data.textColumns[0]) {
                 throw new Error("No text column specified for preview.");
             }
+            console.log(data);
             return await previewResults(data.filePath, data.textColumns[0], {
                 modelName: data.modelName, // needed to tokenize, estimate costs
                 modelProvider: data.modelProvider,
@@ -231,6 +237,52 @@ export class MeaningfullyAPI {
             geminiApiKey: newSettings.geminiApiKey == maskKey(oldSettings.geminiApiKey) ? oldSettings.geminiApiKey : newSettings.geminiApiKey
         };
         return this.metadataManager.setSettings(settings);
+    }
+    // these should be moved to another file, just because they're too low-level for this one.
+    async deletePostgresVectorStore(projectName) {
+        if (this.clients.postgresClient) {
+            try {
+                await this.clients.postgresClient.query('DROP TABLE IF EXISTS vecs_' + sanitizeProjectName(projectName));
+            }
+            catch (error) {
+                console.error(`Error deleting Postgres tables for ${sanitizeProjectName(projectName)}`, error);
+            }
+        }
+    }
+    async deletePostgresIndexStore(projectName) {
+        if (this.clients.postgresClient) {
+            try {
+                await this.clients.postgresClient.query('DROP TABLE IF EXISTS idx_' + sanitizeProjectName(projectName));
+            }
+            catch (error) {
+                console.error(`Error deleting Postgres tables for ${sanitizeProjectName(projectName)}`, error);
+            }
+        }
+    }
+    async deletePostgresDocStore(projectName) {
+        if (this.clients.postgresClient) {
+            try {
+                await this.clients.postgresClient.query('DROP TABLE IF EXISTS docs_' + sanitizeProjectName(projectName));
+            }
+            catch (error) {
+                console.error(`Error deleting Postgres tables for ${sanitizeProjectName(projectName)}`, error);
+            }
+        }
+    }
+    async deleteWeaviateVectorStore(projectName) {
+        if (this.clients.weaviateClient) {
+            await this.clients.weaviateClient.collections.delete(capitalizeFirstLetter(projectName));
+        }
+        // fs.rmSync(join(this.storagePath, 'weaviate_data', capitalizeFirstLetter(result.name)), { recursive: true, force: true });
+    }
+    async deleteSimpleVectorStore(projectName) {
+        fs.rmSync(join(this.storagePath, projectName), { recursive: true, force: true });
+    }
+    async deleteSimpleDocStore(projectName) {
+        fs.rmSync(join(this.storagePath, projectName), { recursive: true, force: true });
+    }
+    async deleteSimpleIndexStore(projectName) {
+        fs.rmSync(join(this.storagePath, projectName), { recursive: true, force: true });
     }
 }
 //# sourceMappingURL=Meaningfully.js.map

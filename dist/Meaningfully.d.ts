@@ -48,6 +48,13 @@ export declare class MeaningfullyAPI {
     setMaskedSettings(newSettings: Settings): Promise<{
         success: boolean;
     }>;
+    deletePostgresVectorStore(projectName: string): Promise<void>;
+    deletePostgresIndexStore(projectName: string): Promise<void>;
+    deletePostgresDocStore(projectName: string): Promise<void>;
+    deleteWeaviateVectorStore(projectName: string): Promise<void>;
+    deleteSimpleVectorStore(projectName: string): Promise<void>;
+    deleteSimpleDocStore(projectName: string): Promise<void>;
+    deleteSimpleIndexStore(projectName: string): Promise<void>;
 }
 export {};
 //# sourceMappingURL=Meaningfully.d.ts.map
