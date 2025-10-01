@@ -69,9 +69,11 @@ export function estimateCost(nodes, modelName) {
 }
 export async function getExistingVectorStoreIndex(config, settings, clients) {
     const storageContext = await getStorageContext(config, settings, clients);
-    return await VectorStoreIndex.init({
-        storageContext: storageContext,
-    });
+    const vectorStore = storageContext.vectorStores[ModalityType.TEXT];
+    if (!vectorStore) {
+        throw new Error("Vector store for ModalityType.TEXT is undefined");
+    }
+    return await VectorStoreIndex.fromVectorStore(vectorStore);
 }
 export async function transformDocumentsToNodes(documents, config) {
     console.time("transformDocumentsToNodes Run Time");
@@ -219,7 +221,8 @@ export async function persistNodes(nodes, config, settings, clients, progressCal
     console.timeEnd("persistNodes Run Time");
     return index;
 }
-async function createVectorStore(config, settings, clients) {
+// exported only for tests
+export async function createVectorStore(config, settings, clients) {
     const embeddingModel = getEmbedModel(config, settings);
     switch (config.vectorStoreType) {
         // for some reason the embedding model has to be specified here TOO
@@ -252,7 +255,8 @@ async function createVectorStore(config, settings, clients) {
             throw new Error(`Unsupported vector store type: ${config.vectorStoreType}`);
     }
 }
-async function createDocumentStore(config, settings, clients) {
+// exported only for tests
+export async function createDocumentStore(config, settings, clients) {
     // we create the doc store without a persist path, so it doesn't write to disk after every put()
     switch (config.documentStoreType || config.vectorStoreType) {
         case "postgres":
@@ -267,7 +271,8 @@ async function createDocumentStore(config, settings, clients) {
             throw new Error(`Unsupported vector store type: ${config.vectorStoreType}`);
     }
 }
-async function createIndexStore(config, settings, clients) {
+// exported only for tests
+export async function createIndexStore(config, settings, clients) {
     switch (config.documentStoreType || config.vectorStoreType) {
         case "postgres":
             return new PostgresIndexStore({
