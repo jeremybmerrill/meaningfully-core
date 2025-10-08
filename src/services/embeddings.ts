@@ -237,12 +237,24 @@ export async function persistNodes(nodes: TextNode[], config: EmbeddingConfig, s
   // Create index and embed documents
   // this is what actaully embeds the nodes
   // (even if they already have embeddings, stupidly)
+  const NODE_CHUNK_SIZE = 10000
+  const modifiedProgressCallback = (progress: number, total: number) => {
+    if (progressCallback) {
+      progressCallback(progress, nodes.length)
+    }
+    console.log('progress total nodes.length', progress, nodes.length);
+  }
   const index = await ProgressVectorStoreIndex.init({
-    nodes, 
-    storageContext, 
-    logProgress: true,
-    progressCallback,
+    nodes: nodes.slice(0, NODE_CHUNK_SIZE), 
+    storageContext,
+    progressCallback: modifiedProgressCallback
   });
+  if (nodes.length > NODE_CHUNK_SIZE) {
+    for (let i = NODE_CHUNK_SIZE; i < nodes.length; i += NODE_CHUNK_SIZE) {
+      const chunk = nodes.slice(i, i + NODE_CHUNK_SIZE);
+      await index.insertNodes(chunk, { progressCallback: modifiedProgressCallback });
+    }
+  }
 
   // I'm not sure why this explicit call to persist is necessary. 
   // storageContext should handle this, but it doesn't.

@@ -193,12 +193,24 @@ export async function persistNodes(nodes, config, settings, clients, progressCal
     // Create index and embed documents
     // this is what actaully embeds the nodes
     // (even if they already have embeddings, stupidly)
+    const NODE_CHUNK_SIZE = 10000;
+    const modifiedProgressCallback = (progress, total) => {
+        if (progressCallback) {
+            progressCallback(progress, nodes.length);
+        }
+        console.log('progress total nodes.length', progress, nodes.length);
+    };
     const index = await ProgressVectorStoreIndex.init({
-        nodes,
+        nodes: nodes.slice(0, NODE_CHUNK_SIZE),
         storageContext,
-        logProgress: true,
-        progressCallback,
+        progressCallback: modifiedProgressCallback
     });
+    if (nodes.length > NODE_CHUNK_SIZE) {
+        for (let i = NODE_CHUNK_SIZE; i < nodes.length; i += NODE_CHUNK_SIZE) {
+            const chunk = nodes.slice(i, i + NODE_CHUNK_SIZE);
+            await index.insertNodes(chunk, { progressCallback: modifiedProgressCallback });
+        }
+    }
     // I'm not sure why this explicit call to persist is necessary. 
     // storageContext should handle this, but it doesn't.
     // all the if statements are just type-checking boilerplate.

@@ -19,11 +19,12 @@ export async function createEmbeddings(csvPath, textColumnName, config, settings
         }
         progressManager.updateProgress(operationId, 5);
         const nodes = await transformDocumentsToNodes(documents, config);
+        const progressCallback = (progress, total) => {
+            const percentage = Math.floor((progress / total) * 90) + 5; // Map to 5-95% of total progress
+            progressManager.updateProgress(operationId, percentage);
+        };
         const [index] = await Promise.all([
-            persistNodes(nodes, config, settings, clients, (progress, total) => {
-                const percentage = Math.floor((progress / total) * 90) + 5; // Map to 5-95% of total progress
-                progressManager.updateProgress(operationId, percentage);
-            }),
+            persistNodes(nodes, config, settings, clients, progressCallback),
             persistDocuments(documents, config, settings, clients)
         ]);
         progressManager.completeOperation(operationId);
