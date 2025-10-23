@@ -327,7 +327,8 @@ export async function createDocumentStore(config: EmbeddingConfig, settings: Set
       });
     case "simple":
     case "weaviate": 
-      return new SimpleDocumentStore();
+      const persistDir = join(config.storagePath, sanitizeProjectName(config.projectName));
+      return SimpleDocumentStore.fromPersistDir(persistDir);
     default:
       throw new Error(`Unsupported vector store type: ${config.vectorStoreType}`);
   }
@@ -343,7 +344,8 @@ export async function createIndexStore(config: EmbeddingConfig, settings: Settin
       });
     case "simple":
     case "weaviate": 
-      return new SimpleIndexStore();
+      const persistDir = join(config.storagePath, sanitizeProjectName(config.projectName));
+      return SimpleIndexStore.fromPersistDir(persistDir);
     default:
       throw new Error(`Unsupported vector store type: ${config.vectorStoreType}`);
   }
