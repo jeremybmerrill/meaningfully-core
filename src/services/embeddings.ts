@@ -242,7 +242,7 @@ export async function persistNodes(nodes: TextNode[], config: EmbeddingConfig, s
     if (progressCallback) {
       progressCallback(progress, nodes.length)
     }
-    console.log('progress total nodes.length', progress, nodes.length);
+    console.log('progress total nodes.length', progress, nodes.length); // TODO: give this `i`, so that it knows how many nodes have been processed so far outside of this chunk.
   }
   const index = await ProgressVectorStoreIndex.init({
     nodes: nodes.slice(0, NODE_CHUNK_SIZE), 

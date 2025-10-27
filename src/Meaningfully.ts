@@ -100,7 +100,6 @@ export class MeaningfullyAPI {
       if (!data.textColumns[0]) {
         throw new Error("No text column specified for preview.");
       }
-      console.log(data);
       return await previewResults(data.filePath, data.textColumns[0] as string, {
         modelName: data.modelName, // needed to tokenize, estimate costs
         modelProvider: data.modelProvider,
