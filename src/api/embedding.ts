@@ -1,12 +1,11 @@
 import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, persistDocuments, getStorageContext } from "../services/embeddings.js";
 import type { EmbeddingConfig, EmbeddingResult, SearchResult, PreviewResult, Settings, MetadataFilter, Clients } from "../types/index.js";
 import { loadDocumentsFromCsv } from "../services/csvLoader.js";
-import { MetadataMode } from "llamaindex";
+import { MetadataMode, Document } from "llamaindex";
 import { ProgressManager } from "../services/progressManager.js";
 
 export async function createEmbeddings(
-  csvPath: string,
-  textColumnName: string,
+  documents: Document[],
   config: EmbeddingConfig,
   settings: Settings,
   clients: Clients
@@ -17,16 +16,6 @@ export async function createEmbeddings(
     const progressManager = ProgressManager.getInstance();
     progressManager.startOperation(operationId, 100);
 
-    const documents = await loadDocumentsFromCsv(csvPath, textColumnName);
-    if (documents.length === 0) {
-      progressManager.clearOperation(operationId);
-      console.timeEnd("createEmbeddings Run Time");
-      return {
-        success: false,
-        error: "That CSV does not appear to contain any documents. Please check the file and try again.",
-      };
-    }
-    
     progressManager.updateProgress(operationId, 5);
     
     const nodes = await transformDocumentsToNodes(documents, config);
@@ -56,18 +45,10 @@ export async function createEmbeddings(
 
 // TODO: rename this to be parallel to createEmbeddings
 export async function previewResults(
-  csvPath: string,
-  textColumnName: string,
+  documents: Document[],
   config: EmbeddingConfig
 ): Promise<PreviewResult> {
   try {
-    const documents = await loadDocumentsFromCsv(csvPath, textColumnName);
-    if (documents.length === 0) {
-      return {
-        success: false,
-        error: "That CSV does not appear to contain any documents. Please check the file and try again.",
-      };
-    }
     // Take 10 rows from the middle of the dataset for preview
     // we take a consistent 10 so that the results of the preview are consistent (i.e. with a larger chunk size, you have fewer, longer results, but more shorter ones if you adjust it)
     // and we take from the middle because the initial rows may be idiosyncratic.

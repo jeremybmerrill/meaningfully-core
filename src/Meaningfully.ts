@@ -96,11 +96,20 @@ export class MeaningfullyAPI {
 
   async generatePreviewData(data: DocumentSetParamsFilePath) {
     const vectorStoreType = this.getVectorStoreType();
+
+
     try {
       if (!data.textColumns[0]) {
         throw new Error("No text column specified for preview.");
       }
-      return await previewResults(data.filePath, data.textColumns[0] as string, {
+      const documents = await loadDocumentsFromCsv(data.filePath, data.textColumns[0] as string);
+      if (documents.length === 0) {
+        return {
+          success: false,
+          error: "That CSV does not appear to contain any documents. Please check the file and try again.",
+        };
+      }      
+      return await previewResults(documents, {
         modelName: data.modelName, // needed to tokenize, estimate costs
         modelProvider: data.modelProvider,
         splitIntoSentences: data.splitIntoSentences,
@@ -148,11 +157,19 @@ export class MeaningfullyAPI {
       for (const textColumn of data.textColumns) {
         const documents = await loadDocumentsFromCsv(data.filePath, textColumn);
         
+        if (documents.length === 0) {
+          console.timeEnd("createEmbeddings Run Time");
+          return {
+            success: false,
+            error: "That CSV does not appear to contain any documents. Please check the file and try again.",
+          };
+        }
+
         // Update total documents count
         await this.metadataManager.updateDocumentCount(documentSetId, documents.length);
 
         // Create embeddings for this column
-        let ret = await createEmbeddings(data.filePath, textColumn, {
+        let ret = await createEmbeddings(documents, {
           modelName: data.modelName,
           modelProvider: data.modelProvider,
           splitIntoSentences: data.splitIntoSentences,
