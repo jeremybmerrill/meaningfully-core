@@ -2,7 +2,7 @@
   "name": "@meaningfully/core",
   "version": "0.1.5",
   "description": "Core functionality for meaningfully semantic search",
-  "repo": "https://github.com/jeremybmerrill/meaningfully-core",
+  "repository": "https://github.com/jeremybmerrill/meaningfully-core",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
