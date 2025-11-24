@@ -94,11 +94,14 @@ export async function search(
   filters?: MetadataFilter[]
 ): Promise<SearchResult[]> {
   const results = await searchDocuments(index, query, numResults, filters);
+
   return results.map((result: any) => ({
     text: result.node.getContent(MetadataMode.NONE),
     score: result.score ?? 0,
     metadata: result.node.metadata,
     //  @ts-ignore
-    sourceNodeId: result.node.relationships?.SOURCE?.nodeId
+    sourceNodeId: result.node.sourceNode?.nodeId,
+    previousNodeId: result.node.prevNode?.nodeId,
+    nextNodeId: result.node.nextNode?.nodeId
   }));
 }

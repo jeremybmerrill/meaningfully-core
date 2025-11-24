@@ -2,6 +2,7 @@ import { MetadataManager } from './MetadataManager.js';
 import { loadDocumentsFromCsv } from './services/csvLoader.js';
 import { createEmbeddings, getIndex, search, previewResults, getDocStore } from './api/embedding.js';
 import { sanitizeProjectName, capitalizeFirstLetter } from "./utils.js";
+import { MetadataMode, ModalityType, VectorStoreQueryMode } from 'llamaindex';
 import { join } from 'path';
 import type { DocumentSetParams, Settings, MetadataFilter, Clients } from './types/index.js';
 import fs from 'fs';
@@ -215,6 +216,17 @@ export class MeaningfullyAPI {
       chunkOverlap: 20, // not actually used, we just re-use a config object that has this option
     }, settings, this.clients);
     const results = await search(index, query, n_results, filters);
+
+    // // rehydrate prev/next nodes, if present
+    // results.forEach(async (result) => {
+    //   if (result.previousNodeId) {
+    //     result.previousNodeText = (await index.vectorStores[ModalityType.TEXT]?.query({docIds: [result.previousNodeId], mode: VectorStoreQueryMode.DEFAULT, similarityTopK: 1}))?.nodes?.[0]?.getContent(MetadataMode.NONE);
+    //   }
+    //   if (result.nextNodeId) {
+    //     result.nextNodeText = (await index.vectorStores[ModalityType.TEXT]?.query({docIds: [result.nextNodeId], mode: VectorStoreQueryMode.DEFAULT, similarityTopK: 1}))?.nodes?.[0]?.getContent(MetadataMode.NONE);
+    //   }
+    // });
+    console.log("results", results);
     return results;
   }   
 
