@@ -2,6 +2,10 @@ export interface SearchResult {
   text: string;
   score: number;
   metadata: Record<string, any>;
+  beforeContext?: string | null;
+  afterContext?: string | null;
+  sourceNodeId?: string;
+  sourceNodeText?: string | null;
 }
 
 export interface EmbeddingResult {

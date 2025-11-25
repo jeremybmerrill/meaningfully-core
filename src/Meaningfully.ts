@@ -5,6 +5,7 @@ import { sanitizeProjectName, capitalizeFirstLetter } from "./utils.js";
 import { join } from 'path';
 import type { DocumentSetParams, Settings, MetadataFilter, Clients } from './types/index.js';
 import fs from 'fs';
+import { MetadataMode } from 'llamaindex';
 
 type HasFilePath = {filePath: string};
 type DocumentSetParamsFilePath = DocumentSetParams & HasFilePath;
@@ -215,6 +216,30 @@ export class MeaningfullyAPI {
       chunkOverlap: 20, // not actually used, we just re-use a config object that has this option
     }, settings, this.clients);
     const results = await search(index, query, n_results, filters);
+
+    // rehydrate results with document node info
+    const context_length_in_chars = 200;
+    const docStore = await getDocStore({
+      modelName: documentSet.parameters.modelName as string,
+      modelProvider: documentSet.parameters.modelProvider as string,
+      splitIntoSentences: documentSet.parameters.splitIntoSentences as boolean,
+      combineSentencesIntoChunks: documentSet.parameters.combineSentencesIntoChunks as boolean,
+      sploderMaxSize: 100,
+      vectorStoreType: documentSet.parameters.vectorStoreType as 'simple' | 'weaviate',
+      projectName: documentSet.name,
+      storagePath: this.storagePath,
+      chunkSize: 1024, // not actually used, we just re-use a config object that has this option
+      chunkOverlap: 20, // not actually used, we just re-use a config object that has this option
+    }, settings, this.clients);
+    await Promise.all(results.map(async (result) => {
+      if (result.sourceNodeId) {
+        const document = await docStore.getNode(result.sourceNodeId);
+        result["sourceNodeText"] = document ? document.getContent(MetadataMode.NONE) : null;
+        const start_index = result["sourceNodeText"]?.indexOf(result.text) || -1;
+        result.beforeContext = result["sourceNodeText"]?.slice(start_index - context_length_in_chars, start_index) || null;
+        result.afterContext = result["sourceNodeText"] ? result["sourceNodeText"].slice(start_index + result.text.length, start_index + result.text.length + context_length_in_chars) : null;
+      }
+    }));
     return results;
   }   
 
