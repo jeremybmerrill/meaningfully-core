@@ -275,6 +275,43 @@ export class MeaningfullyAPI {
     return this.metadataManager.setSettings(settings);
   }
 
+  async getAvailableModelOptions() {
+    const settings = await this.metadataManager.getSettings();
+    
+    // Define all possible model options
+    const allModelOptions: Record<string, string[]> = {
+      "openai": ["text-embedding-3-small", "text-embedding-3-large"],
+      "azure": ["text-embedding-3-small", "text-embedding-3-large"],
+      "ollama": ["mxbai-embed-large", "nomic-embed-text"],
+      "mistral": ["mistral-embed"],
+      "gemini": ["gemini-embedding-001"]
+    };
+
+    // Filter based on which settings are configured
+    const availableModelOptions: Record<string, string[]> = {};
+    
+    if (settings.openAIKey) {
+      availableModelOptions.openai = allModelOptions.openai!;
+    }
+    if (settings.azureOpenAIKey && settings.azureOpenAIEndpoint) {
+      availableModelOptions.azure = allModelOptions.azure!;
+    }
+    if (settings.oLlamaBaseURL) {
+      availableModelOptions.ollama = allModelOptions.ollama!;
+    }
+    if (settings.mistralApiKey) {
+      availableModelOptions.mistral = allModelOptions.mistral!;
+    }
+    if (settings.geminiApiKey) {
+      availableModelOptions.gemini = allModelOptions.gemini!;
+    }
+
+    return {
+      availableModelOptions,
+      allModelOptions
+    };
+  }
+
 
   // these should be moved to another file, just because they're too low-level for this one.
   async deletePostgresVectorStore(projectName: string) {
