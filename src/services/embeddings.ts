@@ -100,12 +100,27 @@ export function estimateCost(nodes: TextNode[], modelName: string): {
 }
 
 export async function getExistingVectorStoreIndex(config: EmbeddingConfig, settings: Settings, clients: Clients) {
-  const storageContext = await getStorageContext(config, settings, clients);
-  const vectorStore = storageContext.vectorStores[ModalityType.TEXT];
-  if (!vectorStore) {
-    throw new Error("Vector store for ModalityType.TEXT is undefined");
+  let storageContext: StorageContext;
+  switch (config.vectorStoreType) {
+    case "simple":
+      const embedModel = getEmbedModel(config, settings);      
+      const persistDir = join(config.storagePath, sanitizeProjectName(config.projectName));
+      storageContext = await storageContextFromDefaults({
+        persistDir: persistDir,
+      });
+      let vsi = await VectorStoreIndex.init({
+        storageContext: storageContext,
+      });
+      vsi.embedModel = embedModel;
+      return vsi;
+    default:
+      storageContext = await getStorageContext(config, settings, clients);
+      const vectorStore = storageContext.vectorStores[ModalityType.TEXT];
+      if (!vectorStore) {
+        throw new Error("Vector store for ModalityType.TEXT is undefined");
+      }
+      return await VectorStoreIndex.fromVectorStore(vectorStore);
   }
-  return await VectorStoreIndex.fromVectorStore(vectorStore);
 }
 
 export async function transformDocumentsToNodes(
