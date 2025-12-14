@@ -1,82 +1,29 @@
 import type { DocumentSetMetadata, Settings } from './types/index.js';
+import type { Knex } from 'knex';
 
 export abstract class MetadataManager {
-  protected queries = {
-    /* 
-    Note: RETURNING on non-select/non-create statements is important for compatibility between SQLite and PostgreSQL.
-    (Without it, better-sqlite would demand to use run() instead of all() or get(), which would break the abstraction.)
-    */
-    createDocumentSetsTable: `
-      CREATE TABLE IF NOT EXISTS document_sets (
-        set_id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL UNIQUE,
-        upload_date TIMESTAMP NOT NULL,
-        parameters TEXT NOT NULL,
-        total_documents INTEGER NOT NULL DEFAULT 0
-      );
-    `,
-    createSettingsTable: `
-      CREATE TABLE IF NOT EXISTS meaningfully_settings (
-        settings_id SERIAL PRIMARY KEY,
-        settings TEXT NOT NULL
-      );
-    `,
-    insertDocumentSet: `
-      INSERT INTO document_sets (name, upload_date, parameters, total_documents)
-      VALUES ($1, $2, $3, $4) RETURNING set_id
-    `,
-    selectDocumentSet: `
-      SELECT * FROM document_sets WHERE set_id = $1
-    `,
-    selectDocumentSets: `
-      SELECT * FROM document_sets ORDER BY upload_date DESC LIMIT $1 OFFSET $2
-    `,
-    countDocumentSets: `
-      SELECT COUNT(*) as count FROM document_sets
-    `,
-    updateDocumentCount: `
-      UPDATE document_sets SET total_documents = total_documents + $1 WHERE set_id = $2 RETURNING *
-    `,
-    deleteDocumentSet: `
-      DELETE FROM document_sets WHERE set_id = $1 RETURNING *
-    `,
-    selectSettings: `
-      SELECT * FROM meaningfully_settings WHERE settings_id = 1
-    `,
-    upsertSettings: `
-      INSERT INTO meaningfully_settings (settings_id, settings)
-      VALUES (1, $1)
-      ON CONFLICT (settings_id) DO UPDATE SET settings = $2
-      RETURNING *
-    `     
-    // the two arguments $1 and $2 are identical, but, to work around a cross-compatibility bug in SQLite versus Postgresql,
-    // where PG can accept the same argument twice (specified as $1 in two places), but SQLITE cannot (it just has ? placeholders)
-    // they are specified separately.
-  };
+  protected abstract knex: Knex;
 
-  protected abstract runQuery<T>(query: string, params?: any[]): Promise<T[]>;
-  protected abstract runQuerySingle<T>(query: string, params?: any[]): Promise<T | null>;
   protected abstract initializeDatabase(): Promise<void>;
   protected abstract close(): void;
 
   async addDocumentSet(metadata: Omit<DocumentSetMetadata, 'documentSetId'>): Promise<number> {
-    const result = await this.runQuerySingle<{ set_id: number }>(this.queries.insertDocumentSet, [
-      metadata.name,
-      metadata.uploadDate.toISOString(),
-      JSON.stringify(metadata.parameters),
-      metadata.totalDocuments
-    ]);
-    return result?.set_id || 0;
+    const [result] = await this.knex('document_sets')
+      .insert({
+        name: metadata.name,
+        upload_date: metadata.uploadDate,
+        parameters: JSON.stringify(metadata.parameters),
+        total_documents: metadata.totalDocuments
+      })
+      .returning('set_id');
+    
+    return typeof result === 'object' ? result.set_id : result;
   }
 
   async getDocumentSet(documentSetId: number): Promise<DocumentSetMetadata | null> {
-    const row = await this.runQuerySingle<{
-      set_id: number;
-      name: string;
-      upload_date: string;
-      parameters: string;
-      total_documents: number;
-    }>(this.queries.selectDocumentSet, [documentSetId]);
+    const row = await this.knex('document_sets')
+      .where('set_id', documentSetId)
+      .first();
 
     if (!row) return null;
 
@@ -91,18 +38,17 @@ export abstract class MetadataManager {
 
   async getDocumentSets(page: number = 1, pageSize: number = 10): Promise<{ documents: DocumentSetMetadata[]; total: number }> {
     const offset = (page - 1) * pageSize;
-    const totalCountRow = await this.runQuerySingle<{ count: number }>(this.queries.countDocumentSets);
-    const totalCount = totalCountRow?.count || 0;
+    
+    const totalCountRow = await this.knex('document_sets').count('* as count').first();
+    const totalCount = totalCountRow ? Number(totalCountRow.count) : 0;
 
-    const rows = await this.runQuery<{
-      set_id: number;
-      name: string;
-      upload_date: string;
-      parameters: string;
-      total_documents: number;
-    }>(this.queries.selectDocumentSets, [pageSize, offset]);
+    const rows = await this.knex('document_sets')
+      .select('*')
+      .orderBy('upload_date', 'desc')
+      .limit(pageSize)
+      .offset(offset);
 
-    const documents = rows.map((row) => ({
+    const documents = rows.map((row: any) => ({
       documentSetId: row.set_id,
       name: row.name,
       uploadDate: new Date(row.upload_date),
@@ -114,11 +60,15 @@ export abstract class MetadataManager {
   }
 
   async updateDocumentCount(documentSetId: number, count: number): Promise<void> {
-    await this.runQuery(this.queries.updateDocumentCount, [count, documentSetId]);
+    await this.knex('document_sets')
+      .where('set_id', documentSetId)
+      .increment('total_documents', count);
   }
 
   async deleteDocumentSet(documentSetId: number): Promise<void> {
-    await this.runQuery(this.queries.deleteDocumentSet, [documentSetId]);
+    await this.knex('document_sets')
+      .where('set_id', documentSetId)
+      .delete();
   }
 
   async getSettings(): Promise<Settings> {
@@ -132,14 +82,22 @@ export abstract class MetadataManager {
       geminiApiKey: null,
     };
 
-    const row = await this.runQuerySingle<{ settings: string }>(this.queries.selectSettings);
+    const row = await this.knex('meaningfully_settings')
+      .where('settings_id', 1)
+      .first();
+    
     return row ? { ...DEFAULT_SETTINGS, ...JSON.parse(row.settings) } : DEFAULT_SETTINGS;
   }
 
   async setSettings(settings: Settings): Promise<{ success: boolean }> {
-    // the JSON.stringify(settings) is repeated to work around a cross-compatibility bug in SQLite versus Postgresql
-    // where PG can accept the same argument twice (specified as $1 in two places), but SQLITE cannot (it just has ? placeholders)
-    await this.runQuery(this.queries.upsertSettings, [JSON.stringify(settings), JSON.stringify(settings)]);
+    await this.knex('meaningfully_settings')
+      .insert({
+        settings_id: 1,
+        settings: JSON.stringify(settings)
+      })
+      .onConflict('settings_id')
+      .merge();
+    
     return { success: true };
   }
 }
