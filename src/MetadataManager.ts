@@ -11,7 +11,7 @@ export abstract class MetadataManager {
     const [result] = await this.knex('document_sets')
       .insert({
         name: metadata.name,
-        upload_date: metadata.uploadDate,
+        upload_date: metadata.uploadDate.toISOString(), // coerce to ISO string for Sqlite3, which otherwise prefers to store dates as timestamps.
         parameters: JSON.stringify(metadata.parameters),
         total_documents: metadata.totalDocuments
       })
