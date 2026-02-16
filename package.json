@@ -1,6 +1,6 @@
 {
   "name": "@meaningfully/core",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Core functionality for meaningfully semantic search",
   "repository": "https://github.com/jeremybmerrill/meaningfully-core",
   "license": "MIT",
