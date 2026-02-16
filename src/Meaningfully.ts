@@ -3,7 +3,7 @@ import { loadDocumentsFromCsv } from './services/csvLoader.js';
 import { createEmbeddings, getIndex, search, previewResults, getDocStore } from './api/embedding.js';
 import { sanitizeProjectName, capitalizeFirstLetter } from "./utils.js";
 import { join } from 'path';
-import type { DocumentSetParams, Settings, MetadataFilter, Clients } from './types/index.js';
+import type { DocumentSetParams, Settings, MetadataFilter, Clients, SearchResponse } from './types/index.js';
 import fs from 'fs';
 
 type HasFilePath = {filePath: string};
@@ -196,7 +196,13 @@ export class MeaningfullyAPI {
   }
 
 
-  async searchDocumentSet(documentSetId: number, query: string, n_results: number = 10,   filters?: MetadataFilter[]  ) {
+  async searchDocumentSet(
+    documentSetId: number,
+    query: string,
+    n_results: number = 10,
+    filters?: MetadataFilter[],
+    offset: number = 0
+  ): Promise<SearchResponse> {
     const documentSet = await this.metadataManager.getDocumentSet(documentSetId);
     const settings = await this.metadataManager.getSettings();
     if (!documentSet) {
@@ -214,7 +220,7 @@ export class MeaningfullyAPI {
       chunkSize: 1024, // not actually used, we just re-use a config object that has this option
       chunkOverlap: 20, // not actually used, we just re-use a config object that has this option
     }, settings, this.clients);
-    const results = await search(index, query, n_results, filters);
+    const results = await search(index, query, n_results, filters, offset);
     return results;
   }   
 

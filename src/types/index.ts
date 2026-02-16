@@ -2,6 +2,12 @@ export interface SearchResult {
   text: string;
   score: number;
   metadata: Record<string, any>;
+  sourceNodeId?: string;
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  hasMore: boolean;
 }
 
 export interface EmbeddingResult {

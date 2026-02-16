@@ -27,7 +27,7 @@ export declare class MeaningfullyAPI {
         success: boolean;
         documentSetId: number;
     }>;
-    searchDocumentSet(documentSetId: number, query: string, n_results?: number, filters?: MetadataFilter[]): Promise<import("./types").SearchResult[]>;
+    searchDocumentSet(documentSetId: number, query: string, n_results?: number, filters?: MetadataFilter[], offset?: number): Promise<import("./types").SearchResponse>;
     getDocument(documentSetId: number, documentNodeId: string): Promise<import("llamaindex").BaseNode<import("llamaindex").Metadata>>;
     getSettings(): Promise<{
         openAIKey: null;

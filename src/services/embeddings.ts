@@ -7,6 +7,7 @@ import {
   TextNode,
   ModalityType,
   type MetadataFilters,
+  type NodeWithScore,
   storageContextFromDefaults,
   SimpleVectorStore,
   type StorageContext,
@@ -371,14 +372,26 @@ export async function searchDocuments(
   index: VectorStoreIndex,
   query: string,
   numResults: number = 10,
-  filters?: MetadataFilter[]
+  filters?: MetadataFilter[],
+  offset: number = 0
 ) {
-  // const metadataFilters: MetadataFilters | undefined = filters ? {filters: filters} : undefined;
+  const safeNumResults = Math.max(1, numResults);
+  const safeOffset = Math.max(0, offset);
+
   const metadataFilters: MetadataFilters = {
     filters: filters ? filters : [],
   };
-  const retriever = index.asRetriever({ similarityTopK: numResults, filters: metadataFilters });
+  const retriever = index.asRetriever({
+    similarityTopK: safeOffset + safeNumResults + 1,
+    filters: metadataFilters
+  });
 
-  const results = await retriever.retrieve(query );
-  return results;
+  const results = (await retriever.retrieve(query)) as NodeWithScore[];
+  const page = results.slice(safeOffset, safeOffset + safeNumResults);
+  const hasMore = results.length > (safeOffset + safeNumResults);
+
+  return {
+    results: page,
+    hasMore
+  };
 }

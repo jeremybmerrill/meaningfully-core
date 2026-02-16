@@ -17,4 +17,7 @@ export declare function getEmbedModel(config: EmbeddingConfig, settings: Setting
 export declare function getStorageContext(config: EmbeddingConfig, settings: Settings, clients: Clients): Promise<StorageContext>;
 export declare function persistDocuments(documents: Document[], config: EmbeddingConfig, settings: Settings, clients: Clients): Promise<void>;
 export declare function persistNodes(nodes: TextNode[], config: EmbeddingConfig, settings: Settings, clients: Clients, progressCallback?: (progress: number, total: number) => void): Promise<ProgressVectorStoreIndex>;
-export declare function searchDocuments(index: VectorStoreIndex, query: string, numResults?: number, filters?: MetadataFilter[]): Promise<import("llamaindex").NodeWithScore<import("llamaindex").Metadata>[]>;
+export declare function searchDocuments(index: VectorStoreIndex, query: string, numResults?: number, filters?: MetadataFilter[], offset?: number): Promise<{
+    results: import("llamaindex").NodeWithScore<import("llamaindex").Metadata>[];
+    hasMore: boolean;
+}>;
