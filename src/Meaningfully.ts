@@ -1,6 +1,7 @@
 import { MetadataManager } from './MetadataManager.js';
 import { loadDocumentsFromCsv } from './services/csvLoader.js';
 import { createEmbeddings, getIndex, search, previewResults, getDocStore } from './api/embedding.js';
+import { generateEmbeddingMap, type TopicDefinition } from './services/embeddingMap.js';
 import { sanitizeProjectName, capitalizeFirstLetter } from "./utils.js";
 import { join } from 'path';
 import type { DocumentSetParams, Settings, MetadataFilter, Clients } from './types/index.js';
@@ -241,6 +242,26 @@ export class MeaningfullyAPI {
       throw new Error('Document not found');
     }
     return document;
+  }
+
+  async generateEmbeddingMap(
+    documentSetId: number,
+    method: 'pacmap' | 'umap' | 'tsne',
+    topics: TopicDefinition[] = [],
+  ) {
+    const documentSet = await this.metadataManager.getDocumentSet(documentSetId);
+    if (!documentSet) {
+      throw new Error('Document set not found');
+    }
+    const settings = await this.metadataManager.getSettings();
+    return await generateEmbeddingMap({
+      documentSet,
+      storagePath: this.storagePath,
+      method,
+      topics,
+      settings,
+      clients: this.clients,
+    });
   }
 
 

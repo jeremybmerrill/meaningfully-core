@@ -1,6 +1,7 @@
 import { MetadataMode, SimpleVectorStore } from 'llamaindex';
 import { UMAP } from 'umap-js';
-import { createDocumentStore, createVectorStore } from './embeddings.js';
+import * as tf from "@tensorflow/tfjs-node";
+import { createVectorStore, getExistingVectorStoreIndex, searchDocuments } from './embeddings.js';
 import type { Clients, DocumentSetMetadata, EmbeddingConfig, Settings } from '../types/index.js';
 
 export type TopicDefinition = {
@@ -24,7 +25,6 @@ export type EmbeddingMapResponse = {
   stats: {
     total: number;
     missingEmbeddings: number;
-    usedWeaviate: boolean;
   };
 };
 
@@ -47,40 +47,51 @@ function buildEmbeddingConfig(documentSet: DocumentSetMetadata, storagePath: str
 }
 
 async function loadEmbeddingsFromVectorStore(params: {
-  docIds: string[];
+  maxResults: number;
   config: EmbeddingConfig;
   settings: Settings;
   clients: Clients;
-}): Promise<{ embeddings: Map<string, number[]>; metadata: Map<string, any>; usedWeaviate: boolean }> {
-  const { docIds, config, settings, clients } = params;
+}): Promise<{ embeddings: Map<string, number[]>; metadata: Map<string, any>; nodes: { id: string; text: string; metadata: Record<string, any> }[] }> {
+  const { maxResults, config, settings, clients } = params;
   const embeddings = new Map<string, number[]>();
   const metadata = new Map<string, any>();
+  const nodes: { id: string; text: string; metadata: Record<string, any> }[] = [];
 
-  const vectorStore = await createVectorStore(config, settings, clients);
-  const bulkResult = await (vectorStore as any).query({docIds: docIds});
-  if (bulkResult && typeof bulkResult === 'object') {
-    if (bulkResult instanceof Map) {
-      for (const [id, vector] of bulkResult.entries()) {
-        if (Array.isArray(vector)) embeddings.set(String(id), vector as number[]);
-      }
-    } else {
-      Object.entries(bulkResult as Record<string, unknown>).forEach(([id, vector]) => {
-        if (Array.isArray(vector)) embeddings.set(id, vector as number[]);
-      });
-    }
+  const index = await getExistingVectorStoreIndex(config, settings, clients);
+  const searchResults = await searchDocuments(index, 'whatever', Math.max(1, maxResults));
+
+
+  for (const result of searchResults as any[]) {
+    const node = result?.node;
+    if (!node) continue;
+
+    const id = String(node.id_ ?? node.id ?? '');
+    if (!id || embeddings.has(id)) continue;
+
+    const embedding = (node.embedding as number[] | undefined) ?? (typeof node.getEmbedding === 'function' ? node.getEmbedding() : undefined);
+    if (!Array.isArray(embedding)) continue;
+
+    const text = node.getContent ? node.getContent(MetadataMode.NONE) : (node.text ?? '');
+    const nodeMetadata = (node.metadata ?? {}) as Record<string, any>;
+    embeddings.set(id, embedding);
+    metadata.set(id, nodeMetadata);
+    nodes.push({ id, text, metadata: nodeMetadata });
   }
 
+  const vectorStore = await createVectorStore(config, settings, clients);
   if (vectorStore instanceof SimpleVectorStore) {
     const dict = vectorStore.toDict();
     Object.entries(dict.metadataDict ?? {}).forEach(([id, meta]) => {
-      metadata.set(id, meta);
+      if (!metadata.has(id)) {
+        metadata.set(id, meta);
+      }
     });
   }
 
   return {
     embeddings,
     metadata,
-    usedWeaviate: config.vectorStoreType === 'weaviate',
+    nodes,
   };
 }
 
@@ -111,7 +122,7 @@ async function reduceEmbeddings(embeddings: number[][], method: 'pacmap' | 'umap
       nIter: 500,
     });
     tsne.init({ data: embeddings, type: 'dense' });
-    for (let i = 0; i < 500; i += 1) tsne.step();
+    tsne.run()
     return tsne.getOutputScaled();
   }
 
@@ -135,13 +146,18 @@ async function reduceEmbeddings(embeddings: number[][], method: 'pacmap' | 'umap
 async function runPacmap(embeddings: number[][]): Promise<number[][]> {
   // @ts-ignore no type definitions published for pacmap_tfjs
   const mod = await import('pacmap_tfjs');
+  const tf = await import('@tensorflow/tfjs-node');
   const PaCMAP = (mod as any).PaCMAP ?? (mod as any).default ?? mod;
   if (!PaCMAP) throw new Error('PaCMAP module did not export a constructor');
 
   const nNeighbors = Math.min(50, Math.max(5, embeddings.length - 1));
   const pacmap = new PaCMAP({ nComponents: 2, nNeighbors, distance: 'euclidean' });
-  const result = await pacmap.fitTransform(embeddings);
-  return (Array.isArray(result) ? result : (result as any).arraySync()) as number[][];
+  
+  console.log(embeddings);
+  console.log(tf.tensor(embeddings));
+  pacmap.fit(tf.tensor(embeddings));
+  const ret = await pacmap.Y.array();
+  return ret as number[][];
 }
 
 export async function generateEmbeddingMap(params: {
@@ -154,25 +170,18 @@ export async function generateEmbeddingMap(params: {
 }): Promise<EmbeddingMapResponse> {
   const { documentSet, storagePath, method, topics = [], settings, clients } = params;
   const config = buildEmbeddingConfig(documentSet, storagePath);
-
-  const docStore = await createDocumentStore(config, settings, clients);
-  const docsMap = await docStore.docs();
-
-  const nodes = Object.entries(docsMap).map(([id, node]) => ({
-    id,
-    text: node.getContent ? node.getContent(MetadataMode.NONE) : ((node as any).text ?? ''),
-    metadata: node.metadata ?? {},
-  }));
+  const total = Number(documentSet.totalDocuments ?? 0);
 
   const embeddingSource = await loadEmbeddingsFromVectorStore({
-    docIds: nodes.map((node) => node.id),
+    maxResults: total > 0 ? total : 10000,
     config,
     settings,
     clients,
   });
 
-  const available = nodes.filter((node) => embeddingSource.embeddings.has(node.id));
-  const missingEmbeddings = nodes.length - available.length;
+  const available = embeddingSource.nodes;
+  const effectiveTotal = total > 0 ? total : available.length;
+  const missingEmbeddings = Math.max(0, effectiveTotal - available.length);
   const embeddingsMatrix = available.map((node) => embeddingSource.embeddings.get(node.id) as number[]);
   const reduced = await reduceEmbeddings(embeddingsMatrix, method);
 
@@ -192,9 +201,8 @@ export async function generateEmbeddingMap(params: {
     method,
     points,
     stats: {
-      total: nodes.length,
+      total: effectiveTotal,
       missingEmbeddings,
-      usedWeaviate: embeddingSource.usedWeaviate,
     },
   };
 }
