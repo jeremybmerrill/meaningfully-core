@@ -246,7 +246,7 @@ export class MeaningfullyAPI {
 
   async generateEmbeddingMap(
     documentSetId: number,
-    method: 'pacmap' | 'umap' | 'tsne',
+    method: 'umap' | 'tsne',
     topics: TopicDefinition[] = [],
   ) {
     const documentSet = await this.metadataManager.getDocumentSet(documentSetId);

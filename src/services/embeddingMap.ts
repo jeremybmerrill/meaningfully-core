@@ -1,6 +1,5 @@
 import { MetadataMode, SimpleVectorStore } from 'llamaindex';
 import { UMAP } from 'umap-js';
-import * as tf from "@tensorflow/tfjs-node";
 import { createVectorStore, getExistingVectorStoreIndex, searchDocuments } from './embeddings.js';
 import type { Clients, DocumentSetMetadata, EmbeddingConfig, Settings } from '../types/index.js';
 
@@ -20,7 +19,7 @@ export type EmbeddingMapPoint = {
 };
 
 export type EmbeddingMapResponse = {
-  method: 'pacmap' | 'umap' | 'tsne';
+  method: 'umap' | 'tsne';
   points: EmbeddingMapPoint[];
   stats: {
     total: number;
@@ -105,7 +104,7 @@ function classifyTopic(text: string, topics: TopicDefinition[]): string {
   return 'Uncategorized';
 }
 
-async function reduceEmbeddings(embeddings: number[][], method: 'pacmap' | 'umap' | 'tsne') {
+async function reduceEmbeddings(embeddings: number[][], method: 'umap' | 'tsne') {
   if (!embeddings.length) return [] as number[][];
   if (embeddings.length === 1) return [[0, 0]];
 
@@ -126,14 +125,6 @@ async function reduceEmbeddings(embeddings: number[][], method: 'pacmap' | 'umap
     return tsne.getOutputScaled();
   }
 
-  if (method === 'pacmap') {
-    try {
-      return await runPacmap(embeddings);
-    } catch (error) {
-      console.warn('PaCMAP failed; falling back to UMAP', error);
-    }
-  }
-
   const umap = new UMAP({
     nComponents: 2,
     nNeighbors: Math.min(15, Math.max(2, embeddings.length - 1)),
@@ -143,27 +134,10 @@ async function reduceEmbeddings(embeddings: number[][], method: 'pacmap' | 'umap
   return umap.fit(embeddings);
 }
 
-async function runPacmap(embeddings: number[][]): Promise<number[][]> {
-  // @ts-ignore no type definitions published for pacmap_tfjs
-  const mod = await import('pacmap_tfjs');
-  const tf = await import('@tensorflow/tfjs-node');
-  const PaCMAP = (mod as any).PaCMAP ?? (mod as any).default ?? mod;
-  if (!PaCMAP) throw new Error('PaCMAP module did not export a constructor');
-
-  const nNeighbors = Math.min(50, Math.max(5, embeddings.length - 1));
-  const pacmap = new PaCMAP({ nComponents: 2, nNeighbors, distance: 'euclidean' });
-  
-  console.log(embeddings);
-  console.log(tf.tensor(embeddings));
-  pacmap.fit(tf.tensor(embeddings));
-  const ret = await pacmap.Y.array();
-  return ret as number[][];
-}
-
 export async function generateEmbeddingMap(params: {
   documentSet: DocumentSetMetadata;
   storagePath: string;
-  method: 'pacmap' | 'umap' | 'tsne';
+  method: 'umap' | 'tsne';
   topics?: TopicDefinition[];
   settings: Settings;
   clients: Clients;
