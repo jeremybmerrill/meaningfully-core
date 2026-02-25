@@ -1,24 +1,47 @@
 import { MetadataManager } from '../MetadataManager.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Knex } from 'knex';
 
 describe('MetadataManager', () => {
   let metadataManager: MetadataManager;
+  let mockKnex: any;
 
   beforeEach(() => {
+    // Create a mock Knex instance with chainable methods
+    mockKnex = {
+      schema: {
+        hasTable: vi.fn().mockResolvedValue(true),
+        createTable: vi.fn().mockReturnThis(),
+      },
+      insert: vi.fn().mockReturnThis(),
+      returning: vi.fn().mockResolvedValue([{ set_id: 1 }]),
+      where: vi.fn().mockReturnThis(),
+      first: vi.fn().mockResolvedValue(null),
+      select: vi.fn().mockReturnThis(),
+      orderBy: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      offset: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockReturnThis(),
+      increment: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+      onConflict: vi.fn().mockReturnThis(),
+      merge: vi.fn().mockResolvedValue(undefined),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    };
+
+    // Make mockKnex callable as a function that returns itself for chaining
+    const knexFn = vi.fn().mockReturnValue(mockKnex);
+    Object.assign(knexFn, mockKnex);
+
     metadataManager = new (class extends MetadataManager {
-      protected async runQuery<T>(query: string, params?: any[]): Promise<T[]> {
-        return [] as T[];
-      }
-      protected async runQuerySingle<T>(query: string, params?: any[]): Promise<T | null> {
-        return null;
-      }
+      protected knex = knexFn as any;
       protected async initializeDatabase(): Promise<void> {}
       protected close(): void {}
     })();
   });
 
   it('should add a document set and return its ID', async () => {
-    vi.spyOn(metadataManager, 'runQuerySingle').mockResolvedValueOnce({ set_id: 1 });
+    mockKnex.returning.mockResolvedValueOnce([{ set_id: 1 }]);
 
     const documentSetId = await metadataManager.addDocumentSet({
       name: 'Test Set',
@@ -31,7 +54,7 @@ describe('MetadataManager', () => {
   });
 
   it('should retrieve a document set by ID', async () => {
-    vi.spyOn(metadataManager, 'runQuerySingle').mockResolvedValueOnce({
+    mockKnex.first.mockResolvedValueOnce({
       set_id: 1,
       name: 'Test Set',
       upload_date: new Date().toISOString(),
@@ -51,23 +74,19 @@ describe('MetadataManager', () => {
   });
 
   it('should update the document count for a document set', async () => {
-    const runQuerySpy = vi.spyOn(metadataManager, 'runQuery').mockResolvedValueOnce([]);
-
     await metadataManager.updateDocumentCount(1, 5);
 
-    expect(runQuerySpy).toHaveBeenCalledWith(metadataManager.queries.updateDocumentCount, [5, 1]);
+    expect(mockKnex.increment).toHaveBeenCalledWith('total_documents', 5);
   });
 
   it('should delete a document set by ID', async () => {
-    const runQuerySpy = vi.spyOn(metadataManager, 'runQuery').mockResolvedValueOnce([]);
-
     await metadataManager.deleteDocumentSet(1);
 
-    expect(runQuerySpy).toHaveBeenCalledWith(metadataManager.queries.deleteDocumentSet, [1]);
+    expect(mockKnex.delete).toHaveBeenCalled();
   });
 
   it('should retrieve default settings if none exist', async () => {
-    vi.spyOn(metadataManager, 'runQuerySingle').mockResolvedValueOnce(null);
+    mockKnex.first.mockResolvedValueOnce(null);
 
     const settings = await metadataManager.getSettings();
 
@@ -83,8 +102,6 @@ describe('MetadataManager', () => {
   });
 
   it('should update settings', async () => {
-    const runQuerySpy = vi.spyOn(metadataManager, 'runQuery').mockResolvedValueOnce([]);
-
     const result = await metadataManager.setSettings({
       openAIKey: 'test-key',
       oLlamaBaseURL: 'http://localhost',
@@ -96,25 +113,8 @@ describe('MetadataManager', () => {
     });
 
     expect(result).toEqual({ success: true });
-    expect(runQuerySpy).toHaveBeenCalledWith(metadataManager.queries.upsertSettings, [
-      JSON.stringify({
-        openAIKey: 'test-key',
-        oLlamaBaseURL: 'http://localhost',
-        azureOpenAIKey: 'azure-key',
-        azureOpenAIEndpoint: 'http://azure.endpoint',
-        azureOpenAIApiVersion: '2024-02-01',
-        mistralApiKey: 'mistral-key',
-        geminiApiKey: 'gemini-key',
-      }),
-      JSON.stringify({
-        openAIKey: 'test-key',
-        oLlamaBaseURL: 'http://localhost',
-        azureOpenAIKey: 'azure-key',
-        azureOpenAIEndpoint: 'http://azure.endpoint',
-        azureOpenAIApiVersion: '2024-02-01',
-        mistralApiKey: 'mistral-key',
-        geminiApiKey: 'gemini-key',
-      }),
-    ]);
+    expect(mockKnex.insert).toHaveBeenCalled();
+    expect(mockKnex.onConflict).toHaveBeenCalledWith('settings_id');
+    expect(mockKnex.merge).toHaveBeenCalled();
   });
 });

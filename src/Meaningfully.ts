@@ -3,7 +3,7 @@ import { loadDocumentsFromCsv } from './services/csvLoader.js';
 import { createEmbeddings, getIndex, search, previewResults, getDocStore } from './api/embedding.js';
 import { sanitizeProjectName, capitalizeFirstLetter } from "./utils.js";
 import { join } from 'path';
-import type { DocumentSetParams, Settings, MetadataFilter, Clients } from './types/index.js';
+import type { DocumentSetParams, Settings, MetadataFilter, Clients, SearchResponse, SearchResult } from './types/index.js';
 import fs from 'fs';
 import { MetadataMode } from 'llamaindex';
 
@@ -146,6 +146,7 @@ export class MeaningfullyAPI {
         modelName: data.modelName,
         modelProvider: data.modelProvider,
         vectorStoreType: vectorStoreType,
+        showContext: data.showContext ?? false,
       },
       totalDocuments: 0 // We'll update this after processing
     });
@@ -197,7 +198,14 @@ export class MeaningfullyAPI {
   }
 
 
-  async searchDocumentSet(documentSetId: number, query: string, n_results: number = 10,   filters?: MetadataFilter[]  ) {
+  async searchDocumentSet(
+    documentSetId: number,
+    query: string,
+    n_results: number = 10,
+    filters?: MetadataFilter[],
+    offset: number = 0,
+    showContext: boolean = false
+  ): Promise<SearchResponse> {
     const documentSet = await this.metadataManager.getDocumentSet(documentSetId);
     const settings = await this.metadataManager.getSettings();
     if (!documentSet) {
@@ -215,32 +223,36 @@ export class MeaningfullyAPI {
       chunkSize: 1024, // not actually used, we just re-use a config object that has this option
       chunkOverlap: 20, // not actually used, we just re-use a config object that has this option
     }, settings, this.clients);
-    const results = await search(index, query, n_results, filters);
+    const searchResponse = await search(index, query, n_results, filters, offset);
 
-    // rehydrate results with document node info
-    const context_length_in_chars = 200;
-    const docStore = await getDocStore({
-      modelName: documentSet.parameters.modelName as string,
-      modelProvider: documentSet.parameters.modelProvider as string,
-      splitIntoSentences: documentSet.parameters.splitIntoSentences as boolean,
-      combineSentencesIntoChunks: documentSet.parameters.combineSentencesIntoChunks as boolean,
-      sploderMaxSize: 100,
-      vectorStoreType: documentSet.parameters.vectorStoreType as 'simple' | 'weaviate',
-      projectName: documentSet.name,
-      storagePath: this.storagePath,
-      chunkSize: 1024, // not actually used, we just re-use a config object that has this option
-      chunkOverlap: 20, // not actually used, we just re-use a config object that has this option
-    }, settings, this.clients);
-    await Promise.all(results.map(async (result) => {
-      if (result.sourceNodeId) {
-        const document = await docStore.getNode(result.sourceNodeId);
-        result["sourceNodeText"] = document ? document.getContent(MetadataMode.NONE) : null;
-        const start_index = result["sourceNodeText"]?.indexOf(result.text) || -1;
-        result.beforeContext = result["sourceNodeText"]?.slice(start_index - context_length_in_chars, start_index) || null;
-        result.afterContext = result["sourceNodeText"] ? result["sourceNodeText"].slice(start_index + result.text.length, start_index + result.text.length + context_length_in_chars) : null;
-      }
-    }));
-    return results;
+    if (showContext) {
+      // rehydrate results with document node info for context.
+      // TODO make this a separate function.
+      const context_length_in_chars = 200;
+      const docStore = await getDocStore({
+        modelName: documentSet.parameters.modelName as string,
+        modelProvider: documentSet.parameters.modelProvider as string,
+        splitIntoSentences: documentSet.parameters.splitIntoSentences as boolean,
+        combineSentencesIntoChunks: documentSet.parameters.combineSentencesIntoChunks as boolean,
+        sploderMaxSize: 100,
+        vectorStoreType: documentSet.parameters.vectorStoreType as 'simple' | 'weaviate',
+        projectName: documentSet.name,
+        storagePath: this.storagePath,
+        chunkSize: 1024, // not actually used, we just re-use a config object that has this option
+        chunkOverlap: 20, // not actually used, we just re-use a config object that has this option
+      }, settings, this.clients);
+      await Promise.all(searchResponse.results.map(async (result: SearchResult) => {
+        if (result.sourceNodeId) {
+          const document = await docStore.getNode(result.sourceNodeId);
+          result["sourceNodeText"] = document ? document.getContent(MetadataMode.NONE) : null;
+          const start_index = result["sourceNodeText"]?.indexOf(result.text) || -1;
+          result.beforeContext = result["sourceNodeText"]?.slice(start_index - context_length_in_chars, start_index) || null;
+          result.afterContext = result["sourceNodeText"] ? result["sourceNodeText"].slice(start_index + result.text.length, start_index + result.text.length + context_length_in_chars) : null;
+        }
+        return result;
+      }));
+    }
+    return searchResponse;
   }   
 
   async getDocument(documentSetId: number, documentNodeId: string){
@@ -298,6 +310,43 @@ export class MeaningfullyAPI {
       geminiApiKey: newSettings.geminiApiKey == maskKey(oldSettings.geminiApiKey) ? oldSettings.geminiApiKey : newSettings.geminiApiKey
     };
     return this.metadataManager.setSettings(settings);
+  }
+
+  async getAvailableModelOptions() {
+    const settings = await this.metadataManager.getSettings();
+    
+    // Define all possible model options
+    const allModelOptions: Record<string, string[]> = {
+      "openai": ["text-embedding-3-small", "text-embedding-3-large"],
+      "azure": ["text-embedding-3-small", "text-embedding-3-large"],
+      "ollama": ["mxbai-embed-large", "nomic-embed-text"],
+      "mistral": ["mistral-embed"],
+      "gemini": ["gemini-embedding-001"]
+    };
+
+    // Filter based on which settings are configured
+    const availableModelOptions: Record<string, string[]> = {};
+    
+    if (settings.openAIKey) {
+      availableModelOptions.openai = allModelOptions.openai!;
+    }
+    if (settings.azureOpenAIKey && settings.azureOpenAIEndpoint) {
+      availableModelOptions.azure = allModelOptions.azure!;
+    }
+    if (settings.oLlamaBaseURL) {
+      availableModelOptions.ollama = allModelOptions.ollama!;
+    }
+    if (settings.mistralApiKey) {
+      availableModelOptions.mistral = allModelOptions.mistral!;
+    }
+    if (settings.geminiApiKey) {
+      availableModelOptions.gemini = allModelOptions.gemini!;
+    }
+
+    return {
+      availableModelOptions,
+      allModelOptions
+    };
   }
 
 

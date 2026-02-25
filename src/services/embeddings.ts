@@ -7,6 +7,7 @@ import {
   TextNode,
   ModalityType,
   type MetadataFilters,
+  type NodeWithScore,
   storageContextFromDefaults,
   SimpleVectorStore,
   type StorageContext,
@@ -100,12 +101,27 @@ export function estimateCost(nodes: TextNode[], modelName: string): {
 }
 
 export async function getExistingVectorStoreIndex(config: EmbeddingConfig, settings: Settings, clients: Clients) {
-  const storageContext = await getStorageContext(config, settings, clients);
-  const vectorStore = storageContext.vectorStores[ModalityType.TEXT];
-  if (!vectorStore) {
-    throw new Error("Vector store for ModalityType.TEXT is undefined");
+  let storageContext: StorageContext;
+  switch (config.vectorStoreType) {
+    case "simple":
+      const embedModel = getEmbedModel(config, settings);      
+      const persistDir = join(config.storagePath, sanitizeProjectName(config.projectName));
+      storageContext = await storageContextFromDefaults({
+        persistDir: persistDir,
+      });
+      let vsi = await VectorStoreIndex.init({
+        storageContext: storageContext,
+      });
+      vsi.embedModel = embedModel;
+      return vsi;
+    default:
+      storageContext = await getStorageContext(config, settings, clients);
+      const vectorStore = storageContext.vectorStores[ModalityType.TEXT];
+      if (!vectorStore) {
+        throw new Error("Vector store for ModalityType.TEXT is undefined");
+      }
+      return await VectorStoreIndex.fromVectorStore(vectorStore);
   }
-  return await VectorStoreIndex.fromVectorStore(vectorStore);
 }
 
 export async function transformDocumentsToNodes(
@@ -356,14 +372,26 @@ export async function searchDocuments(
   index: VectorStoreIndex,
   query: string,
   numResults: number = 10,
-  filters?: MetadataFilter[]
+  filters?: MetadataFilter[],
+  offset: number = 0
 ) {
-  // const metadataFilters: MetadataFilters | undefined = filters ? {filters: filters} : undefined;
+  const safeNumResults = Math.max(1, numResults);
+  const safeOffset = Math.max(0, offset);
+
   const metadataFilters: MetadataFilters = {
     filters: filters ? filters : [],
   };
-  const retriever = index.asRetriever({ similarityTopK: numResults, filters: metadataFilters });
+  const retriever = index.asRetriever({
+    similarityTopK: safeOffset + safeNumResults + 1,
+    filters: metadataFilters
+  });
 
-  const results = await retriever.retrieve(query );
-  return results;
+  const results = (await retriever.retrieve(query)) as NodeWithScore[];
+  const page = results.slice(safeOffset, safeOffset + safeNumResults);
+  const hasMore = results.length > (safeOffset + safeNumResults);
+
+  return {
+    results: page,
+    hasMore
+  };
 }

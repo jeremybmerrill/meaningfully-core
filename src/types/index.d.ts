@@ -7,6 +7,10 @@ export interface SearchResult {
     sourceNodeId?: string;
     sourceNodeText?: string | null;
 }
+export interface SearchResponse {
+    results: SearchResult[];
+    hasMore: boolean;
+}
 export interface EmbeddingResult {
     success: boolean;
     error?: string;
@@ -42,6 +46,7 @@ export interface DocumentSetParams {
     chunkOverlap: number;
     modelName: string;
     modelProvider: string;
+    showContext: boolean;
 }
 export interface EmbeddingConfig {
     modelName: string;

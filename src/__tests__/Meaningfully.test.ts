@@ -15,7 +15,7 @@ vi.mock('path');
 // Mock the embedding module before importing MeaningfullyAPI
 vi.doMock('../api/embedding.js', () => ({
   getIndex: vi.fn(),
-  search: vi.fn().mockResolvedValue([{ id: 1, text: 'result' }]),
+  search: vi.fn().mockResolvedValue({ results: [{ id: 1, text: 'result' }], hasMore: false }),
   createEmbeddings: vi.fn().mockResolvedValue({ success: true, error: null }),
 }));
 vi.doMock('../services/csvLoader.js', () => ({
@@ -145,7 +145,7 @@ describe('MeaningfullyAPI', () => {
 
       const results = await api.searchDocumentSet(1, 'query', 10);
 
-      expect(results).toEqual([{ id: 1, text: 'result' }]);
+      expect(results).toEqual({ results: [{ id: 1, text: 'result' }], hasMore: false });
       expect(mockMetadataManager.getDocumentSet).toHaveBeenCalledWith(1);
     });
   });

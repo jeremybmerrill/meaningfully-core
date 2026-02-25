@@ -1,5 +1,5 @@
 import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, persistDocuments, getStorageContext } from "../services/embeddings.js";
-import type { EmbeddingConfig, EmbeddingResult, SearchResult, PreviewResult, Settings, MetadataFilter, Clients } from "../types/index.js";
+import type { EmbeddingConfig, EmbeddingResult, SearchResponse, PreviewResult, Settings, MetadataFilter, Clients } from "../types/index.js";
 import { loadDocumentsFromCsv } from "../services/csvLoader.js";
 import { MetadataMode, Document } from "llamaindex";
 import { ProgressManager } from "../services/progressManager.js";
@@ -91,14 +91,18 @@ export async function search(
   index: any,
   query: string,
   numResults: number = 10,
-  filters?: MetadataFilter[]
-): Promise<SearchResult[]> {
-  const results = await searchDocuments(index, query, numResults, filters);
-  return results.map((result: any) => ({
-    text: result.node.getContent(MetadataMode.NONE),
-    score: result.score ?? 0,
-    metadata: result.node.metadata,
-    //  @ts-ignore
-    sourceNodeId: result.node.relationships?.SOURCE?.nodeId
-  }));
+  filters?: MetadataFilter[],
+  offset: number = 0
+): Promise<SearchResponse> {
+  const { results, hasMore } = await searchDocuments(index, query, numResults, filters, offset);
+  return {
+    results: results.map((result: any) => ({
+      text: result.node.getContent(MetadataMode.NONE),
+      score: result.score ?? 0,
+      metadata: result.node.metadata,
+      //  @ts-ignore
+      sourceNodeId: result.node.relationships?.SOURCE?.nodeId
+    })),
+    hasMore
+  };
 }
