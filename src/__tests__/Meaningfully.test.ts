@@ -90,6 +90,10 @@ describe('MeaningfullyAPI', () => {
         description: 'Test dataset',
       };
 
+      // uploadCsv requires at least one document before it will call createEmbeddings
+      const loadDocumentsFromCsvMock = vi.spyOn(await import('../services/csvLoader.js'), 'loadDocumentsFromCsv');
+      loadDocumentsFromCsvMock.mockResolvedValue([{ text: 'row 1', metadata: {} }]);
+
       // Mock createEmbeddings for this test
       const createEmbeddingsMock = vi.spyOn(await import('../api/embedding.js'), 'createEmbeddings');
       createEmbeddingsMock.mockResolvedValue({ success: true });
@@ -97,8 +101,7 @@ describe('MeaningfullyAPI', () => {
       const result = await api.uploadCsv(mockData);
 
       expect(createEmbeddingsMock).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.any(String),
+        expect.any(Array),
         expect.objectContaining({ modelName: 'testModel' }),
         expect.any(Object),
         expect.any(Object)
@@ -106,6 +109,7 @@ describe('MeaningfullyAPI', () => {
       expect(result).toEqual({ success: true, documentSetId: 1 });
 
       createEmbeddingsMock.mockRestore(); // Restore the original implementation after the test
+      loadDocumentsFromCsvMock.mockRestore();
     });
 
     it('should handle errors during embeddings creation', async () => {
@@ -124,6 +128,10 @@ describe('MeaningfullyAPI', () => {
         description: 'Test dataset',
       };
 
+      // uploadCsv requires at least one document before it will call createEmbeddings
+      const loadDocumentsFromCsvMock = vi.spyOn(await import('../services/csvLoader.js'), 'loadDocumentsFromCsv');
+      loadDocumentsFromCsvMock.mockResolvedValue([{ text: 'row 1', metadata: {} }]);
+
       // Mock createEmbeddings to simulate an error
       const createEmbeddingsMock = vi.spyOn(await import('../api/embedding.js'), 'createEmbeddings');
       createEmbeddingsMock.mockResolvedValue({ success: false, error: 'Embedding error' });
@@ -132,6 +140,7 @@ describe('MeaningfullyAPI', () => {
       expect(mockMetadataManager.deleteDocumentSet).toHaveBeenCalledWith(1);
 
       createEmbeddingsMock.mockRestore(); // Restore the original implementation after the test
+      loadDocumentsFromCsvMock.mockRestore();
     });
   });
 
