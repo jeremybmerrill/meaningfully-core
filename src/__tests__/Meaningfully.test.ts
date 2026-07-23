@@ -17,6 +17,8 @@ vi.doMock('../api/embedding.js', () => ({
   getIndex: vi.fn(),
   search: vi.fn().mockResolvedValue({ results: [{ id: 1, text: 'result' }], hasMore: false }),
   createEmbeddings: vi.fn().mockResolvedValue({ success: true, error: null }),
+  previewResults: vi.fn(),
+  previewSample: vi.fn(),
 }));
 vi.doMock('../services/csvLoader.js', () => ({
   loadDocumentsFromCsv: vi.fn().mockResolvedValue([]),
@@ -130,6 +132,41 @@ describe('MeaningfullyAPI', () => {
       expect(mockMetadataManager.deleteDocumentSet).toHaveBeenCalledWith(1);
 
       createEmbeddingsMock.mockRestore(); // Restore the original implementation after the test
+    });
+  });
+
+  describe('refinePreviewSample', () => {
+    it('re-previews a cached sample without touching the filesystem', async () => {
+      const mockSample = [{ text: 'doc1', metadata: {} }, { text: 'doc2', metadata: {} }];
+      const mockResult = { success: true, nodes: [{ text: 'node1', metadata: {} }], estimatedPrice: 5, tokenCount: 50, pricePer1M: 0.01 };
+
+      const previewSampleMock = vi.spyOn(await import('../api/embedding.js'), 'previewSample');
+      previewSampleMock.mockResolvedValue(mockResult);
+
+      const result = await api.refinePreviewSample({
+        sample: mockSample,
+        documentCount: 20,
+        datasetName: 'testDataset',
+        description: 'Test dataset',
+        textColumns: ['text'],
+        metadataColumns: [],
+        splitIntoSentences: true,
+        combineSentencesIntoChunks: false,
+        sploderMaxSize: 100,
+        chunkSize: 512,
+        chunkOverlap: 0,
+        modelName: 'testModel',
+        modelProvider: 'openai',
+      });
+
+      expect(previewSampleMock).toHaveBeenCalledWith(
+        mockSample,
+        20,
+        expect.objectContaining({ modelName: 'testModel', chunkSize: 512 })
+      );
+      expect(result).toEqual(mockResult);
+
+      previewSampleMock.mockRestore();
     });
   });
 

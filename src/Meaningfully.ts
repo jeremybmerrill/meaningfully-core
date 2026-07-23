@@ -1,9 +1,9 @@
 import { MetadataManager } from './MetadataManager.js';
 import { loadDocumentsFromCsv } from './services/csvLoader.js';
-import { createEmbeddings, getIndex, search, previewResults, getDocStore } from './api/embedding.js';
+import { createEmbeddings, getIndex, search, previewResults, previewSample, getDocStore } from './api/embedding.js';
 import { sanitizeProjectName, capitalizeFirstLetter } from "./utils.js";
 import { join } from 'path';
-import type { DocumentSetParams, Settings, MetadataFilter, Clients, SearchResponse } from './types/index.js';
+import type { DocumentSetParams, Settings, MetadataFilter, Clients, SearchResponse, SampleDocument } from './types/index.js';
 import fs from 'fs';
 
 type HasFilePath = {filePath: string};
@@ -125,6 +125,26 @@ export class MeaningfullyAPI {
     throw error;
   }
 }
+
+  // Re-previews a sample already fetched via generatePreviewData, under a (possibly changed)
+  // config. Doesn't touch the filesystem -- callers should use this instead of
+  // generatePreviewData for config-only changes (chunk size, splitting, model) that don't
+  // require re-reading the source CSV.
+  async refinePreviewSample(data: DocumentSetParams & { sample: SampleDocument[], documentCount: number }) {
+    const vectorStoreType = this.getVectorStoreType();
+    return await previewSample(data.sample, data.documentCount, {
+      modelName: data.modelName,
+      modelProvider: data.modelProvider,
+      splitIntoSentences: data.splitIntoSentences,
+      combineSentencesIntoChunks: data.combineSentencesIntoChunks,
+      sploderMaxSize: 100,
+      vectorStoreType: vectorStoreType,
+      projectName: data.datasetName,
+      storagePath: this.storagePath,
+      chunkSize: data.chunkSize,
+      chunkOverlap: data.chunkOverlap
+    });
+  }
 
   async uploadCsv(data: DocumentSetParamsFilePath) {
     // figure out if weaviate is available

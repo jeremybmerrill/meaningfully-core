@@ -1,6 +1,6 @@
 //@ts-nocheck
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createEmbeddings, previewResults, getDocStore, getIndex, search } from '../embedding.js';
+import { createEmbeddings, previewResults, previewSample, getDocStore, getIndex, search } from '../embedding.js';
 import { loadDocumentsFromCsv } from '../../services/csvLoader.js';
 import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, getStorageContext } from '../../services/embeddings.js';
 import { MetadataMode } from 'llamaindex';
@@ -44,38 +44,64 @@ describe('embedding.ts', () => {
     });
 
     describe('previewResults', () => {
-        it('should return preview results and estimated cost', async () => {
-            const mockDocuments = Array(20).fill({ text: 'doc' });
+        it('should return preview results, estimated cost, and a sample for later reuse', async () => {
+            const mockDocuments = Array(20).fill(null).map((_, i) => ({ text: `doc${i}`, metadata: { row: i } }));
             const mockNodes = [{ text: 'node1', metadata: {} }, { text: 'node2', metadata: {} }];
-            const mockPreviewNodes = [{ text: 'node1', metadata: {} }, { text: 'node2', metadata: {} }];
             const mockEstimate = { estimatedPrice: 10, tokenCount: 100, pricePer1M: 0.01 };
-            loadDocumentsFromCsv.mockResolvedValue(mockDocuments);
             transformDocumentsToNodes.mockResolvedValue(mockNodes);
             estimateCost.mockReturnValue(mockEstimate);
 
-            const result = await previewResults('path/to/csv', 'text', {});
+            const result = await previewResults(mockDocuments, {});
 
             expect(result).toEqual({
                 success: true,
-                nodes: mockPreviewNodes,
-                ...mockEstimate
+                nodes: mockNodes,
+                ...mockEstimate,
+                documentCount: 20,
+                sample: mockDocuments.slice(10, 20).map((d) => ({ text: d.text, metadata: d.metadata })),
             });
         });
 
         it('should return error on failure', async () => {
-            loadDocumentsFromCsv.mockRejectedValue(new Error('Failed to load documents'));
+            transformDocumentsToNodes.mockRejectedValue(new Error('Failed to transform documents'));
 
-            const result = await previewResults('path/to/csv', 'text', {});
+            const result = await previewResults([{ text: 'doc', metadata: {} }], {});
 
-            expect(result).toEqual({ success: false, error: 'Failed to load documents' });
+            expect(result).toEqual({ success: false, error: 'Failed to transform documents' });
+        });
+    });
+
+    describe('previewSample', () => {
+        it('extrapolates estimated cost from the sample to the full document count', async () => {
+            const mockSample = [{ text: 'doc1', metadata: {} }, { text: 'doc2', metadata: {} }];
+            const mockNodes = [{ text: 'node1', metadata: {} }];
+            transformDocumentsToNodes.mockResolvedValue(mockNodes);
+            estimateCost.mockReturnValue({ estimatedPrice: 10, tokenCount: 100, pricePer1M: 0.01 });
+
+            // sample of 2 representing 20 total documents -> 10x scale
+            const result = await previewSample(mockSample, 20, {});
+
+            expect(result).toEqual({
+                success: true,
+                nodes: mockNodes,
+                estimatedPrice: 100,
+                tokenCount: 1000,
+                pricePer1M: 0.01,
+            });
         });
 
-        it('should handle empty documents', async () => {
-            loadDocumentsFromCsv.mockResolvedValue([]);
+        it('returns an error when there is no sample to work from', async () => {
+            const result = await previewSample([], 20, {});
 
-            const result = await previewResults('path/to/csv', 'text', {});
+            expect(result).toEqual({ success: false, error: 'No sample data available for preview.' });
+        });
 
-            expect(result).toEqual({ success: false, error: 'That CSV does not appear to contain any documents. Please check the file and try again.' });
+        it('returns error on failure', async () => {
+            transformDocumentsToNodes.mockRejectedValue(new Error('Failed to transform documents'));
+
+            const result = await previewSample([{ text: 'doc', metadata: {} }], 20, {});
+
+            expect(result).toEqual({ success: false, error: 'Failed to transform documents' });
         });
     });
 
@@ -141,34 +167,6 @@ describe('embedding.ts', () => {
         });
     });
 });
-
-  describe('previewResults', () => {
-    it('should return preview results and estimated cost', async () => {
-      const mockDocuments = Array(20).fill({ text: 'doc' });
-      const mockNodes = [{ text: 'node1', metadata: {} }, { text: 'node2', metadata: {} }];
-      const mockPreviewNodes = [{ text: 'node1', metadata: {} }, { text: 'node2', metadata: {} }];
-      const mockEstimate = { estimatedPrice: 10, tokenCount: 100, pricePer1M: 0.01 };
-      loadDocumentsFromCsv.mockResolvedValue(mockDocuments);
-      transformDocumentsToNodes.mockResolvedValue(mockNodes);
-      estimateCost.mockReturnValue(mockEstimate);
-
-      const result = await previewResults('path/to/csv', 'text', {});
-
-      expect(result).toEqual({
-        success: true,
-        nodes: mockPreviewNodes,
-        ...mockEstimate
-      });
-    });
-
-    it('should return error on failure', async () => {
-      loadDocumentsFromCsv.mockRejectedValue(new Error('Failed to load documents'));
-
-      const result = await previewResults('path/to/csv', 'text', {});
-
-      expect(result).toEqual({ success: false, error: 'Failed to load documents' });
-    });
-  });
 
   describe('getDocStore', () => {
     it('should return existing doc store', async () => {
