@@ -241,6 +241,22 @@ export async function persistDocuments(documents: Document[], config: EmbeddingC
   console.timeEnd("persistDocuments Run Time");
 }
 
+// Embedded Weaviate briefly returns "leader not found" while its single-node raft
+// group finishes electing a leader after a schema change (e.g. a just-created collection);
+// retrying after a short delay is Weaviate's own documented guidance for this transient error.
+async function retryOnWeaviateLeaderNotFound<T>(fn: () => Promise<T>, retries = 15, delayMs = 1500): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (retries > 0 && message.includes("leader not found")) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      return retryOnWeaviateLeaderNotFound(fn, retries - 1, delayMs);
+    }
+    throw error;
+  }
+}
+
 export async function persistNodes(nodes: TextNode[], config: EmbeddingConfig, settings: Settings, clients: Clients, progressCallback?: (progress: number, total: number) => void): Promise<ProgressVectorStoreIndex> {
   // Create and configure vector store based on type
   console.time("persistNodes Run Time");
@@ -260,15 +276,15 @@ export async function persistNodes(nodes: TextNode[], config: EmbeddingConfig, s
     }
     console.log('progress total nodes.length', progress, nodes.length); // TODO: give this `i`, so that it knows how many nodes have been processed so far outside of this chunk.
   }
-  const index = await ProgressVectorStoreIndex.init({
-    nodes: nodes.slice(0, NODE_CHUNK_SIZE), 
+  const index = await retryOnWeaviateLeaderNotFound(() => ProgressVectorStoreIndex.init({
+    nodes: nodes.slice(0, NODE_CHUNK_SIZE),
     storageContext,
     progressCallback: modifiedProgressCallback
-  });
+  }));
   if (nodes.length > NODE_CHUNK_SIZE) {
     for (let i = NODE_CHUNK_SIZE; i < nodes.length; i += NODE_CHUNK_SIZE) {
       const chunk = nodes.slice(i, i + NODE_CHUNK_SIZE);
-      await index.insertNodes(chunk, { progressCallback: modifiedProgressCallback });
+      await retryOnWeaviateLeaderNotFound(() => index.insertNodes(chunk, { progressCallback: modifiedProgressCallback }));
     }
   }
 
