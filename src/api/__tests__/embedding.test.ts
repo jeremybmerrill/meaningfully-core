@@ -1,6 +1,6 @@
 //@ts-nocheck
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createEmbeddings, previewResults, getDocStore, getIndex, search } from '../embedding.js';
+import { createEmbeddings, previewResults, previewSample, getDocStore, getIndex, search } from '../embedding.js';
 import { loadDocumentsFromCsv } from '../../services/csvLoader.js';
 import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, getStorageContext } from '../../services/embeddings.js';
 import { MetadataMode } from 'llamaindex';
@@ -13,69 +13,90 @@ vi.mock('../../services/embeddings');
 
 describe('embedding.ts', () => {
     describe('createEmbeddings', () => {
+        // createEmbeddings takes documents directly (loading the CSV and checking for an
+        // empty result are the caller's job, e.g. Meaningfully.uploadCsv) -- there's no
+        // "empty documents" case to test here since the caller never reaches this function
+        // with an empty array.
         it('should create embeddings and return success', async () => {
-            const mockDocuments = [{ text: 'doc1' }, { text: 'doc2' }];
-            const mockNodes = [{ node: 'node1' }, { node: 'node2' }];
+            const mockDocuments = [{ text: 'doc1', metadata: {} }, { text: 'doc2', metadata: {} }];
+            const mockNodes = [{ text: 'node1', metadata: {} }, { text: 'node2', metadata: {} }];
             const mockIndex = 'index1';
-            loadDocumentsFromCsv.mockResolvedValue(mockDocuments);
             transformDocumentsToNodes.mockResolvedValue(mockNodes);
             persistNodes.mockResolvedValue(mockIndex);
 
-            const result = await createEmbeddings('path/to/csv', 'text', {}, {});
+            const result = await createEmbeddings(mockDocuments, {}, {}, {});
 
             expect(result).toEqual({ success: true, index: mockIndex });
         });
 
         it('should return error on failure', async () => {
-            loadDocumentsFromCsv.mockRejectedValue(new Error('Failed to load documents'));
+            transformDocumentsToNodes.mockRejectedValue(new Error('Failed to transform documents'));
 
-            const result = await createEmbeddings('path/to/csv', 'text', {}, {});
+            const result = await createEmbeddings([{ text: 'doc1', metadata: {} }], {}, {}, {});
 
-            expect(result).toEqual({ success: false, error: 'Failed to load documents' });
-        });
-
-        it('should handle empty documents', async () => {
-            loadDocumentsFromCsv.mockResolvedValue([]);
-
-            const result = await createEmbeddings('path/to/csv', 'text', {}, {});
-
-            expect(result).toEqual({ success: false, error: 'That CSV does not appear to contain any documents. Please check the file and try again.' });
+            expect(result).toEqual({ success: false, error: 'Failed to transform documents' });
         });
     });
 
     describe('previewResults', () => {
-        it('should return preview results and estimated cost', async () => {
-            const mockDocuments = Array(20).fill({ text: 'doc' });
+        it('should return preview results, estimated cost, and a sample for later reuse', async () => {
+            const mockDocuments = Array(20).fill(null).map((_, i) => ({ text: `doc${i}`, metadata: { row: i } }));
             const mockNodes = [{ text: 'node1', metadata: {} }, { text: 'node2', metadata: {} }];
-            const mockPreviewNodes = [{ text: 'node1', metadata: {} }, { text: 'node2', metadata: {} }];
             const mockEstimate = { estimatedPrice: 10, tokenCount: 100, pricePer1M: 0.01 };
-            loadDocumentsFromCsv.mockResolvedValue(mockDocuments);
             transformDocumentsToNodes.mockResolvedValue(mockNodes);
             estimateCost.mockReturnValue(mockEstimate);
 
-            const result = await previewResults('path/to/csv', 'text', {});
+            const result = await previewResults(mockDocuments, {});
 
             expect(result).toEqual({
                 success: true,
-                nodes: mockPreviewNodes,
-                ...mockEstimate
+                nodes: mockNodes,
+                ...mockEstimate,
+                documentCount: 20,
+                sample: mockDocuments.slice(10, 20).map((d) => ({ text: d.text, metadata: d.metadata })),
             });
         });
 
         it('should return error on failure', async () => {
-            loadDocumentsFromCsv.mockRejectedValue(new Error('Failed to load documents'));
+            transformDocumentsToNodes.mockRejectedValue(new Error('Failed to transform documents'));
 
-            const result = await previewResults('path/to/csv', 'text', {});
+            const result = await previewResults([{ text: 'doc', metadata: {} }], {});
 
-            expect(result).toEqual({ success: false, error: 'Failed to load documents' });
+            expect(result).toEqual({ success: false, error: 'Failed to transform documents' });
+        });
+    });
+
+    describe('previewSample', () => {
+        it('extrapolates estimated cost from the sample to the full document count', async () => {
+            const mockSample = [{ text: 'doc1', metadata: {} }, { text: 'doc2', metadata: {} }];
+            const mockNodes = [{ text: 'node1', metadata: {} }];
+            transformDocumentsToNodes.mockResolvedValue(mockNodes);
+            estimateCost.mockReturnValue({ estimatedPrice: 10, tokenCount: 100, pricePer1M: 0.01 });
+
+            // sample of 2 representing 20 total documents -> 10x scale
+            const result = await previewSample(mockSample, 20, {});
+
+            expect(result).toEqual({
+                success: true,
+                nodes: mockNodes,
+                estimatedPrice: 100,
+                tokenCount: 1000,
+                pricePer1M: 0.01,
+            });
         });
 
-        it('should handle empty documents', async () => {
-            loadDocumentsFromCsv.mockResolvedValue([]);
+        it('returns an error when there is no sample to work from', async () => {
+            const result = await previewSample([], 20, {});
 
-            const result = await previewResults('path/to/csv', 'text', {});
+            expect(result).toEqual({ success: false, error: 'No sample data available for preview.' });
+        });
 
-            expect(result).toEqual({ success: false, error: 'That CSV does not appear to contain any documents. Please check the file and try again.' });
+        it('returns error on failure', async () => {
+            transformDocumentsToNodes.mockRejectedValue(new Error('Failed to transform documents'));
+
+            const result = await previewSample([{ text: 'doc', metadata: {} }], 20, {});
+
+            expect(result).toEqual({ success: false, error: 'Failed to transform documents' });
         });
     });
 
@@ -107,22 +128,25 @@ describe('embedding.ts', () => {
                 { node: { getContent: () => 'content1', metadata: {} }, score: 1 },
                 { node: { getContent: () => 'content2', metadata: {} }, score: 2 }
             ];
-            searchDocuments.mockResolvedValue(mockResults);
+            searchDocuments.mockResolvedValue({ results: mockResults, hasMore: false });
 
             const result = await search('index', 'query');
 
-            expect(result).toEqual([
-                { text: 'content1', score: 1, metadata: {} },
-                { text: 'content2', score: 2, metadata: {} }
-            ]);
+            expect(result).toEqual({
+                results: [
+                    { text: 'content1', score: 1, metadata: {} },
+                    { text: 'content2', score: 2, metadata: {} }
+                ],
+                hasMore: false
+            });
         });
 
         it('should handle no search results', async () => {
-            searchDocuments.mockResolvedValue([]);
+            searchDocuments.mockResolvedValue({ results: [], hasMore: false });
 
             const result = await search('index', 'query');
 
-            expect(result).toEqual([]);
+            expect(result).toEqual({ results: [], hasMore: false });
         });
 
         it('should handle search results with null scores', async () => {
@@ -130,107 +154,22 @@ describe('embedding.ts', () => {
                 { node: { getContent: () => 'content1', metadata: {} }, score: null },
                 { node: { getContent: () => 'content2', metadata: {} }, score: null }
             ];
-            searchDocuments.mockResolvedValue(mockResults);
+            searchDocuments.mockResolvedValue({ results: mockResults, hasMore: false });
 
             const result = await search('index', 'query');
 
-            expect(result).toEqual([
-                { text: 'content1', score: 0, metadata: {} },
-                { text: 'content2', score: 0, metadata: {} }
-            ]);
+            expect(result).toEqual({
+                results: [
+                    { text: 'content1', score: 0, metadata: {} },
+                    { text: 'content2', score: 0, metadata: {} }
+                ],
+                hasMore: false
+            });
         });
     });
 });
 
-  describe('previewResults', () => {
-    it('should return preview results and estimated cost', async () => {
-      const mockDocuments = Array(20).fill({ text: 'doc' });
-      const mockNodes = [{ text: 'node1', metadata: {} }, { text: 'node2', metadata: {} }];
-      const mockPreviewNodes = [{ text: 'node1', metadata: {} }, { text: 'node2', metadata: {} }];
-      const mockEstimate = { estimatedPrice: 10, tokenCount: 100, pricePer1M: 0.01 };
-      loadDocumentsFromCsv.mockResolvedValue(mockDocuments);
-      transformDocumentsToNodes.mockResolvedValue(mockNodes);
-      estimateCost.mockReturnValue(mockEstimate);
-
-      const result = await previewResults('path/to/csv', 'text', {});
-
-      expect(result).toEqual({
-        success: true,
-        nodes: mockPreviewNodes,
-        ...mockEstimate
-      });
-    });
-
-    it('should return error on failure', async () => {
-      loadDocumentsFromCsv.mockRejectedValue(new Error('Failed to load documents'));
-
-      const result = await previewResults('path/to/csv', 'text', {});
-
-      expect(result).toEqual({ success: false, error: 'Failed to load documents' });
-    });
-  });
-
-  describe('getDocStore', () => {
-    it('should return existing doc store', async () => {
-      const mockDocStore = 'docStore';
-      getStorageContext.mockResolvedValue({ docStore: mockDocStore });
-
-      const result = await getDocStore({});
-
-      expect(result).toBe(mockDocStore);
-    });
-  });
-
-  describe('getIndex', () => {
-    it('should return existing vector store index', async () => {
-      const mockIndex = 'index';
-      getExistingVectorStoreIndex.mockResolvedValue(mockIndex);
-
-      const result = await getIndex({}, {});
-
-      expect(result).toBe(mockIndex);
-    });
-  });
-    describe('search', () => {
-        it('should return search results', async () => {
-        const mockResults = [
-            { node: { getContent: () => 'content1', metadata: {} }, score: 1 },
-            { node: { getContent: () => 'content2', metadata: {} }, score: 2 }
-        ];
-        searchDocuments.mockResolvedValue(mockResults);
-    
-        const result = await search('index', 'query');
-    
-        expect(result).toEqual([
-            { text: 'content1', score: 1, metadata: {} },
-            { text: 'content2', score: 2, metadata: {} }
-        ]);
-        });
-    
-        it('should handle no search results', async () => {
-        searchDocuments.mockResolvedValue([]);
-    
-        const result = await search('index', 'query');
-    
-        expect(result).toEqual([]);
-        });
-    
-        it('should handle search results with null scores', async () => {
-        const mockResults = [
-            { node: { getContent: () => 'content1', metadata: {} }, score: null },
-            { node: { getContent: () => 'content2', metadata: {} }, score: null }
-        ];
-        searchDocuments.mockResolvedValue(mockResults);
-    
-        const result = await search('index', 'query');
-    
-        expect(result).toEqual([
-            { text: 'content1', score: 0, metadata: {} },
-            { text: 'content2', score: 0, metadata: {} }
-        ]);
-        });
-    });
-    describe('createEmbeddings with progress tracking', () => {
+describe('createEmbeddings with progress tracking', () => {
       beforeEach(() => {
         vi.clearAllMocks();
       });
@@ -353,40 +292,9 @@ describe('embedding.ts', () => {
         expect(progressManager.updateProgress).toHaveBeenCalledWith(expect.any(String), 95);  // 100% -> 95%
       });
 
-      it('should clear operation on empty documents', async () => {
-        // Setup
-        vi.mock('../../services/progressManager', () => {
-          const mockInstance = {
-            startOperation: vi.fn(),
-            updateProgress: vi.fn(),
-            completeOperation: vi.fn(),
-            clearOperation: vi.fn()
-          };
-          
-          return {
-            ProgressManager: {
-              getInstance: () => mockInstance
-            }
-          };
-        });
-        
-        // Re-import to use mocked version
-        const { createEmbeddings } = await import('../embedding.js');
-        const { ProgressManager } = await import('../../services/progressManager.js');
-
-        loadDocumentsFromCsv.mockResolvedValue([]);
-        
-        // Execute
-        const result = await createEmbeddings('path/to/csv', 'text', {}, {}, {});
-        
-        // Verify
-        const progressManager = ProgressManager.getInstance();
-        expect(progressManager.clearOperation).toHaveBeenCalled();
-        expect(result).toEqual({
-          success: false, 
-          error: "That CSV does not appear to contain any documents. Please check the file and try again."
-        });
-      });
+      // Note: there's no "empty documents" case to test here -- createEmbeddings takes
+      // documents directly and never checks for emptiness itself (the caller does, before
+      // ever calling this function), so progress tracking never starts in that case either.
 
       it('shoulde complete operation on successful embedding', async () => {
         // Setup

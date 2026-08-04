@@ -16,6 +16,11 @@ export interface EmbeddingResult {
   index?: any;
 }
 
+export interface SampleDocument {
+  text: string;
+  metadata: Record<string, any>;
+}
+
 export interface PreviewResult {
   success: boolean;
   error?: string;
@@ -26,7 +31,11 @@ export interface PreviewResult {
   estimatedPrice?: number;
   tokenCount?: number;
   pricePer1M?: number;
-} 
+  // present on the whole-file estimate so the caller can re-preview later
+  // (via previewSample) without re-reading the source file
+  documentCount?: number;
+  sample?: SampleDocument[];
+}
 
 // Type definitions for meaningfully core
 export interface SearchConfig {
