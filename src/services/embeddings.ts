@@ -25,6 +25,7 @@ import { AzureOpenAIEmbedding } from "@llamaindex/azure";
 import { Sploder } from "./sploder.js";
 import { CustomSentenceSplitter } from "./sentenceSplitter.js";
 import { MockEmbedding } from "./mockEmbedding.js";
+import { LMStudioEmbedding } from "./lmStudioEmbedding.js";
 import { encodingForModel, type TiktokenModel } from "js-tiktoken";
 import { join } from "path";
 import type { EmbeddingConfig, Settings, MetadataFilter, Clients  } from "../types/index.js";
@@ -209,10 +210,9 @@ export function getEmbedModel(
     if (!settings.lmStudioBaseURL) {
       throw new Error("LM Studio base URL is required for LM Studio embedding models");
     }
-    embedModel = new OpenAIEmbedding({
+    embedModel = new LMStudioEmbedding({
       model: config.modelName,
-      apiKey: "lm-studio", // LM Studio ignores the API key, but the OpenAI client requires a non-empty one
-      baseURL: `${settings.lmStudioBaseURL.replace(/\/$/, "")}/v1`,
+      baseURL: settings.lmStudioBaseURL,
     });
   } else if (config.modelProvider === "azure") {
     if (!settings.azureOpenAIKey || !settings.azureOpenAIEndpoint) {

@@ -20,6 +20,7 @@ vi.mock(import("../embeddings.js"), async (importOriginal) => {
 
 // Now import the mocked functions
 import { transformDocumentsToNodes, getEmbedModel, getOllamaEmbeddingModels, getLMStudioEmbeddingModels } from '../embeddings.js';
+import { LMStudioEmbedding } from '../lmStudioEmbedding.js';
 
 describe('transformDocumentsToNodes', () => {
   beforeEach(() => {
@@ -133,7 +134,7 @@ describe('getEmbedModel', () => {
       { ...mockConfig, modelProvider: 'lmstudio' },
       mockSettings
     );
-    expect(lmStudioModel).toBeDefined();
+    expect(lmStudioModel).toBeInstanceOf(LMStudioEmbedding);
 
     // Test with 'mock' provider
     const mockModel = getEmbedModel(
