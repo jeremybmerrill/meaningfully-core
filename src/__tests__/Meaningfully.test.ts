@@ -73,6 +73,37 @@ describe('MeaningfullyAPI', () => {
     });
   });
 
+  describe('getAvailableModelOptions', () => {
+    beforeEach(() => {
+      vi.stubGlobal('fetch', vi.fn());
+    });
+
+    it('lists models installed in Ollama rather than the hardcoded defaults', async () => {
+      (fetch as any).mockImplementation((url: string, opts?: any) => {
+        if (url.endsWith('/api/tags')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ models: [{ name: 'bge-m3:latest' }] }),
+          });
+        }
+        if (url.endsWith('/api/show')) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ capabilities: ['embedding'] }) });
+        }
+        throw new Error(`unexpected url ${url}`);
+      });
+
+      const { availableModelOptions } = await api.getAvailableModelOptions();
+      expect(availableModelOptions.ollama).toEqual(['bge-m3:latest']);
+    });
+
+    it('falls back to the default Ollama model list when the Ollama server is unreachable', async () => {
+      (fetch as any).mockRejectedValue(new Error('fetch failed'));
+
+      const { availableModelOptions, allModelOptions } = await api.getAvailableModelOptions();
+      expect(availableModelOptions.ollama).toEqual(allModelOptions.ollama);
+    });
+  });
+
   describe('uploadCsv', () => {
     it('should upload a CSV and create embeddings successfully', async () => {
       const mockData = {

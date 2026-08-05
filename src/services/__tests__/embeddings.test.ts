@@ -19,7 +19,7 @@ vi.mock(import("../embeddings.js"), async (importOriginal) => {
 })
 
 // Now import the mocked functions
-import { transformDocumentsToNodes, getEmbedModel } from '../embeddings.js';
+import { transformDocumentsToNodes, getEmbedModel, getOllamaEmbeddingModels } from '../embeddings.js';
 
 describe('transformDocumentsToNodes', () => {
   beforeEach(() => {
@@ -140,5 +140,39 @@ describe('getEmbedModel', () => {
         mockSettings
       );
     }).toThrow('Unsupported embedding model provider: invalid');
+  });
+});
+
+describe('getOllamaEmbeddingModels', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  it('returns only models whose capabilities include "embedding"', async () => {
+    (fetch as any).mockImplementation((url: string, opts?: any) => {
+      if (url.endsWith('/api/tags')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            models: [{ name: 'mxbai-embed-large:latest' }, { name: 'llama3.2:latest' }],
+          }),
+        });
+      }
+      if (url.endsWith('/api/show')) {
+        const { model } = JSON.parse(opts.body);
+        const capabilities = model === 'mxbai-embed-large:latest' ? ['embedding'] : ['completion'];
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ capabilities }) });
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+
+    const models = await getOllamaEmbeddingModels('http://localhost:11434/');
+    expect(models).toEqual(['mxbai-embed-large:latest']);
+  });
+
+  it('throws when the Ollama server is unreachable or returns an error', async () => {
+    (fetch as any).mockResolvedValue({ ok: false, status: 500, statusText: 'Internal Server Error' });
+
+    await expect(getOllamaEmbeddingModels('http://localhost:11434')).rejects.toThrow('Failed to list Ollama models');
   });
 });
