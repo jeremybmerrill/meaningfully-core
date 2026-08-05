@@ -1,6 +1,7 @@
 import { MetadataManager } from './MetadataManager.js';
 import { loadDocumentsFromCsv } from './services/csvLoader.js';
 import { createEmbeddings, getIndex, search, previewResults, previewSample, getDocStore } from './api/embedding.js';
+import { getOllamaEmbeddingModels } from './services/embeddings.js';
 import { sanitizeProjectName, capitalizeFirstLetter } from "./utils.js";
 import { join } from 'path';
 import type { DocumentSetParams, Settings, MetadataFilter, Clients, SearchResponse, SampleDocument } from './types/index.js';
@@ -323,7 +324,14 @@ export class MeaningfullyAPI {
       availableModelOptions.azure = allModelOptions.azure!;
     }
     if (settings.oLlamaBaseURL) {
-      availableModelOptions.ollama = allModelOptions.ollama!;
+      try {
+        const installedModels = await getOllamaEmbeddingModels(settings.oLlamaBaseURL);
+        availableModelOptions.ollama = installedModels.length > 0 ? installedModels : allModelOptions.ollama!;
+      } catch (error) {
+        // Ollama may be unreachable; fall back to the default list rather than disabling the provider.
+        console.warn('Failed to query Ollama for installed embedding models:', error);
+        availableModelOptions.ollama = allModelOptions.ollama!;
+      }
     }
     if (settings.mistralApiKey) {
       availableModelOptions.mistral = allModelOptions.mistral!;

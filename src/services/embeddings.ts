@@ -54,6 +54,33 @@ const PRICE_PER_1M: Record<string, number> = {
 };
 
 
+// Queries a local Ollama instance for installed models, keeping only those that
+// support embeddings (per /api/show's "capabilities" field), rather than a hardcoded list.
+// See https://github.com/jeremybmerrill/meaningfully/issues/37 and /issues/111
+export async function getOllamaEmbeddingModels(baseURL: string): Promise<string[]> {
+  const host = baseURL.replace(/\/$/, "");
+  const tagsResponse = await fetch(`${host}/api/tags`);
+  if (!tagsResponse.ok) {
+    throw new Error(`Failed to list Ollama models: ${tagsResponse.status} ${tagsResponse.statusText}`);
+  }
+  const { models } = (await tagsResponse.json()) as { models: { name: string }[] };
+
+  const embeddingModelNames = await Promise.all(
+    models.map(async ({ name }) => {
+      const showResponse = await fetch(`${host}/api/show`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: name }),
+      });
+      if (!showResponse.ok) return null;
+      const { capabilities } = (await showResponse.json()) as { capabilities?: string[] };
+      return capabilities?.includes("embedding") ? name : null;
+    })
+  );
+
+  return embeddingModelNames.filter((name): name is string => name !== null);
+}
+
 /* all transformations except the embedding step (which is handled by VectorStoreIndex.init) */
 function getBaseTransformations(config: EmbeddingConfig){
   const transformations: TransformComponent[] = [
