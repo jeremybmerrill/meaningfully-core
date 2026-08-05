@@ -87,6 +87,7 @@ export interface EmbeddingConfig {
 export interface Settings {
   openAIKey: string | null;
   oLlamaBaseURL: string | null;
+  lmStudioBaseURL: string | null;
   azureOpenAIKey: string | null;
   azureOpenAIEndpoint: string | null;
   azureOpenAIApiVersion: string | null;

@@ -1,7 +1,7 @@
 import { MetadataManager } from './MetadataManager.js';
 import { loadDocumentsFromCsv } from './services/csvLoader.js';
 import { createEmbeddings, getIndex, search, previewResults, previewSample, getDocStore } from './api/embedding.js';
-import { getOllamaEmbeddingModels } from './services/embeddings.js';
+import { getOllamaEmbeddingModels, getLMStudioEmbeddingModels } from './services/embeddings.js';
 import { sanitizeProjectName, capitalizeFirstLetter } from "./utils.js";
 import { join } from 'path';
 import type { DocumentSetParams, Settings, MetadataFilter, Clients, SearchResponse, SampleDocument } from './types/index.js';
@@ -283,6 +283,7 @@ export class MeaningfullyAPI {
     return {
       openAIKey: maskKey(settings.openAIKey),
       oLlamaBaseURL: settings.oLlamaBaseURL,
+      lmStudioBaseURL: settings.lmStudioBaseURL,
       azureOpenAIKey: maskKey(settings.azureOpenAIKey),
       azureOpenAIEndpoint: settings.azureOpenAIEndpoint,
       azureOpenAIApiVersion: settings.azureOpenAIApiVersion,
@@ -310,6 +311,7 @@ export class MeaningfullyAPI {
       "openai": ["text-embedding-3-small", "text-embedding-3-large"],
       "azure": ["text-embedding-3-small", "text-embedding-3-large"],
       "ollama": ["mxbai-embed-large", "nomic-embed-text"],
+      "lmstudio": ["text-embedding-nomic-embed-text-v1.5"],
       "mistral": ["mistral-embed"],
       "gemini": ["gemini-embedding-001"]
     };
@@ -331,6 +333,16 @@ export class MeaningfullyAPI {
         // Ollama may be unreachable; fall back to the default list rather than disabling the provider.
         console.warn('Failed to query Ollama for installed embedding models:', error);
         availableModelOptions.ollama = allModelOptions.ollama!;
+      }
+    }
+    if (settings.lmStudioBaseURL) {
+      try {
+        const installedModels = await getLMStudioEmbeddingModels(settings.lmStudioBaseURL);
+        availableModelOptions.lmstudio = installedModels.length > 0 ? installedModels : allModelOptions.lmstudio!;
+      } catch (error) {
+        // LM Studio may be unreachable; fall back to the default list rather than disabling the provider.
+        console.warn('Failed to query LM Studio for installed embedding models:', error);
+        availableModelOptions.lmstudio = allModelOptions.lmstudio!;
       }
     }
     if (settings.mistralApiKey) {

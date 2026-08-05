@@ -81,6 +81,18 @@ export async function getOllamaEmbeddingModels(baseURL: string): Promise<string[
   return embeddingModelNames.filter((name): name is string => name !== null);
 }
 
+// Queries a local LM Studio instance for installed models, keeping only those whose
+// "type" is "embeddings" (LM Studio's own REST API, distinct from its OpenAI-compatible one).
+export async function getLMStudioEmbeddingModels(baseURL: string): Promise<string[]> {
+  const host = baseURL.replace(/\/$/, "");
+  const response = await fetch(`${host}/api/v0/models`);
+  if (!response.ok) {
+    throw new Error(`Failed to list LM Studio models: ${response.status} ${response.statusText}`);
+  }
+  const { data } = (await response.json()) as { data: { id: string; type: string }[] };
+  return data.filter((model) => model.type === "embeddings").map((model) => model.id);
+}
+
 /* all transformations except the embedding step (which is handled by VectorStoreIndex.init) */
 function getBaseTransformations(config: EmbeddingConfig){
   const transformations: TransformComponent[] = [
@@ -193,6 +205,15 @@ export function getEmbedModel(
     embedModel = new OllamaEmbedding({ model: config.modelName, config: {
       host: settings.oLlamaBaseURL ? settings.oLlamaBaseURL : undefined
     }, }); 
+  } else if (config.modelProvider === "lmstudio") {
+    if (!settings.lmStudioBaseURL) {
+      throw new Error("LM Studio base URL is required for LM Studio embedding models");
+    }
+    embedModel = new OpenAIEmbedding({
+      model: config.modelName,
+      apiKey: "lm-studio", // LM Studio ignores the API key, but the OpenAI client requires a non-empty one
+      baseURL: `${settings.lmStudioBaseURL.replace(/\/$/, "")}/v1`,
+    });
   } else if (config.modelProvider === "azure") {
     if (!settings.azureOpenAIKey || !settings.azureOpenAIEndpoint) {
       throw new Error("Azure OpenAI API key and endpoint are required for Azure embedding models");
