@@ -1,6 +1,6 @@
-import { 
-  Document, 
-  VectorStoreIndex, 
+import {
+  Document,
+  VectorStoreIndex,
   // OpenAIEmbedding,
   IngestionPipeline,
   TransformComponent,
@@ -15,7 +15,8 @@ import {
   SimpleDocumentStore,
   BaseDocumentStore,
   BaseIndexStore,
-  SimpleIndexStore
+  SimpleIndexStore,
+  type BaseEmbedding
 } from "llamaindex";
 import { OllamaEmbedding} from '@llamaindex/ollama'
 import { MistralAIEmbedding, MistralAIEmbeddingModelType } from '@llamaindex/mistral'
@@ -35,15 +36,28 @@ import { OpenAIEmbedding } from "@llamaindex/openai";
 import { BatchingWeaviateVectorStore } from "./batchingWeaviateVectorStore.js";
 import { ProgressVectorStoreIndex } from "./progressVectorStoreIndex.js";
 
-// unused, but probalby eventually will be used.
-// to be used by postgres store, which it' slooking increasingly like I have to enable again
+// Used by the postgres vector store, which needs a fixed vector column size up front.
+// Models not listed here (e.g. an arbitrary Ollama/LM Studio model) have their dimensions
+// determined by actually embedding a probe string -- see getEmbeddingDimensions below --
+// since none of these providers' model-listing APIs expose embedding dimensionality.
 const MODEL_DIMENSIONS: Record<string, number> = {
   "text-embedding-3-small": 1536,
   "text-embedding-3-large": 3072,
+  "text-embedding-ada-002": 1536,
   "mxbai-embed-large": 1024,
   "mistral-embed": 1024,
   "gemini-embedding-001": 768, // Gemini embedding model
 };
+
+// exported only for tests
+export async function getEmbeddingDimensions(embeddingModel: BaseEmbedding, modelName: string): Promise<number> {
+  const knownDimensions = MODEL_DIMENSIONS[modelName];
+  if (knownDimensions) {
+    return knownDimensions;
+  }
+  const probeEmbedding = await embeddingModel.getTextEmbedding("dimension probe");
+  return probeEmbedding.length;
+}
 
 const PRICE_PER_1M: Record<string, number> = {
   "text-embedding-3-small": 0.02,
@@ -367,7 +381,7 @@ export async function createVectorStore(config: EmbeddingConfig, settings: Setti
       return new PGVectorStore({
         client: clients.postgresClient,
         tableName: "vecs_" + sanitizeProjectName(config.projectName),
-        dimensions: MODEL_DIMENSIONS[config.modelName] || 1536, // default to 1536 if model not found
+        dimensions: await getEmbeddingDimensions(embeddingModel, config.modelName),
         embeddingModel: embeddingModel
       });
 
