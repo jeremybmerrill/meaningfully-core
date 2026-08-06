@@ -248,6 +248,49 @@ describe('MeaningfullyAPI', () => {
       );
       expect(result).toEqual({ success: true });
     });
+
+    // Regression test: creation always sanitizes the project name into the store's name
+    // (table/collection/directory), e.g. "My Test" -> "My_Test". Deletion used the raw,
+    // unsanitized name, so it silently deleted (or dropped) the wrong store, leaving the real
+    // one orphaned. A later document set reusing the same display name would then collide with
+    // that orphaned store's schema -- this is exactly how the reported Weaviate
+    // "vector dimensions do not match the index dimensions" error happens: the old, undeleted
+    // collection still has its original embedding dimension baked in.
+    it('sanitizes the project name before deleting a "simple" store, matching how it was created', async () => {
+      vi.spyOn(mockMetadataManager, 'getDocumentSet').mockResolvedValue({
+        parameters: { vectorStoreType: 'simple' },
+        name: 'My Test Dataset',
+        documentSetId: 1,
+        uploadDate: new Date(),
+        totalDocuments: 100
+      });
+
+      vi.spyOn(fs, 'rmSync').mockImplementation(() => {});
+
+      await api.deleteDocumentSet(1);
+
+      expect(fs.rmSync).toHaveBeenCalledWith(
+        path.join('mock_storage_path', 'My_Test_Dataset'),
+        { recursive: true, force: true }
+      );
+    });
+
+    it('sanitizes the project name before deleting a Weaviate collection, matching how it was created', async () => {
+      vi.spyOn(mockMetadataManager, 'getDocumentSet').mockResolvedValue({
+        parameters: { vectorStoreType: 'weaviate' },
+        name: 'My Test Dataset',
+        documentSetId: 1,
+        uploadDate: new Date(),
+        totalDocuments: 100
+      });
+      vi.spyOn(fs, 'rmSync').mockImplementation(() => {});
+      const deleteCollection = vi.fn().mockResolvedValue(undefined);
+      api.setClients({ weaviateClient: { collections: { delete: deleteCollection } } as any });
+
+      await api.deleteDocumentSet(1);
+
+      expect(deleteCollection).toHaveBeenCalledWith('My_Test_Dataset');
+    });
   });
 
   describe('getMaskedSettings', () => {
