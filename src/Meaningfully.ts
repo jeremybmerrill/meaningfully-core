@@ -390,19 +390,19 @@ export class MeaningfullyAPI {
   }
   async deleteWeaviateVectorStore(projectName: string) {
     if (this.clients.weaviateClient) {
-      await this.clients.weaviateClient.collections.delete(capitalizeFirstLetter(projectName));
+      await this.clients.weaviateClient.collections.delete(capitalizeFirstLetter(sanitizeProjectName(projectName)));
     }
-        // fs.rmSync(join(this.storagePath, 'weaviate_data', capitalizeFirstLetter(result.name)), { recursive: true, force: true });
+        // fs.rmSync(join(this.storagePath, 'weaviate_data', capitalizeFirstLetter(sanitizeProjectName(result.name))), { recursive: true, force: true });
   }
   async deleteSimpleVectorStore(projectName: string) {
-    fs.rmSync(join(this.storagePath, projectName), { recursive: true, force: true });
+    fs.rmSync(join(this.storagePath, sanitizeProjectName(projectName)), { recursive: true, force: true });
 
   }
   async deleteSimpleDocStore(projectName: string) {
-    fs.rmSync(join(this.storagePath, projectName), { recursive: true, force: true });
+    fs.rmSync(join(this.storagePath, sanitizeProjectName(projectName)), { recursive: true, force: true });
 
   }
   async deleteSimpleIndexStore(projectName: string) {
-    fs.rmSync(join(this.storagePath, projectName), { recursive: true, force: true });
+    fs.rmSync(join(this.storagePath, sanitizeProjectName(projectName)), { recursive: true, force: true });
   }
 }
