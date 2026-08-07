@@ -19,7 +19,8 @@ vi.mock(import("../embeddings.js"), async (importOriginal) => {
 })
 
 // Now import the mocked functions
-import { transformDocumentsToNodes, getEmbedModel, getOllamaEmbeddingModels } from '../embeddings.js';
+import { transformDocumentsToNodes, getEmbedModel, getOllamaEmbeddingModels, getLMStudioEmbeddingModels, getEmbeddingDimensions } from '../embeddings.js';
+import { LMStudioEmbedding } from '../lmStudioEmbedding.js';
 
 describe('transformDocumentsToNodes', () => {
   beforeEach(() => {
@@ -42,6 +43,7 @@ describe('transformDocumentsToNodes', () => {
   const mockSettings = {
     openAIKey: 'mock-api-key',
     oLlamaBaseURL: 'http://localhost',
+    lmStudioBaseURL: 'http://localhost:1234',
     azureOpenAIKey: null,
     azureOpenAIEndpoint: null,
     azureOpenAIApiVersion: null,
@@ -110,6 +112,7 @@ describe('getEmbedModel', () => {
   const mockSettings = {
     openAIKey: 'mock-api-key',
     oLlamaBaseURL: 'http://localhost',
+    lmStudioBaseURL: 'http://localhost:1234',
     azureOpenAIKey: null,
     azureOpenAIEndpoint: null,
     azureOpenAIApiVersion: null,
@@ -126,20 +129,36 @@ describe('getEmbedModel', () => {
     );
     expect(ollamaModel).toBeDefined();
     
+    // Test with 'lmstudio' provider
+    const lmStudioModel = getEmbedModel(
+      { ...mockConfig, modelProvider: 'lmstudio' },
+      mockSettings
+    );
+    expect(lmStudioModel).toBeInstanceOf(LMStudioEmbedding);
+
     // Test with 'mock' provider
     const mockModel = getEmbedModel(
-      { ...mockConfig, modelProvider: 'mock' }, 
+      { ...mockConfig, modelProvider: 'mock' },
       mockSettings
     );
     expect(mockModel).toBeDefined();
-    
+
     // Test with invalid provider
     expect(() => {
       getEmbedModel(
-        { ...mockConfig, modelProvider: 'invalid' as any }, 
+        { ...mockConfig, modelProvider: 'invalid' as any },
         mockSettings
       );
     }).toThrow('Unsupported embedding model provider: invalid');
+  });
+
+  it('requires a base URL for the lmstudio provider', () => {
+    expect(() => {
+      getEmbedModel(
+        { ...mockConfig, modelProvider: 'lmstudio' },
+        { ...mockSettings, lmStudioBaseURL: null }
+      );
+    }).toThrow('LM Studio base URL is required for LM Studio embedding models');
   });
 });
 
@@ -174,5 +193,59 @@ describe('getOllamaEmbeddingModels', () => {
     (fetch as any).mockResolvedValue({ ok: false, status: 500, statusText: 'Internal Server Error' });
 
     await expect(getOllamaEmbeddingModels('http://localhost:11434')).rejects.toThrow('Failed to list Ollama models');
+  });
+});
+
+describe('getLMStudioEmbeddingModels', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  it('returns only models whose type is "embeddings"', async () => {
+    (fetch as any).mockImplementation((url: string) => {
+      if (url.endsWith('/api/v0/models')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            data: [
+              { id: 'meta-llama-3.1-8b-instruct', object: 'model', type: 'llm' },
+              { id: 'text-embedding-nomic-embed-text-v1.5', object: 'model', type: 'embeddings' },
+            ],
+          }),
+        });
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+
+    const models = await getLMStudioEmbeddingModels('http://localhost:1234/');
+    expect(models).toEqual(['text-embedding-nomic-embed-text-v1.5']);
+  });
+
+  it('throws when the LM Studio server is unreachable or returns an error', async () => {
+    (fetch as any).mockResolvedValue({ ok: false, status: 500, statusText: 'Internal Server Error' });
+
+    await expect(getLMStudioEmbeddingModels('http://localhost:1234')).rejects.toThrow('Failed to list LM Studio models');
+  });
+});
+
+describe('getEmbeddingDimensions', () => {
+  it('returns the known dimension without making an embedding call for a well-known model', async () => {
+    const getTextEmbedding = vi.fn();
+    const fakeEmbedModel = { getTextEmbedding } as any;
+
+    const dimensions = await getEmbeddingDimensions(fakeEmbedModel, 'text-embedding-3-small');
+
+    expect(dimensions).toBe(1536);
+    expect(getTextEmbedding).not.toHaveBeenCalled();
+  });
+
+  it('determines the dimension by embedding a probe string for an unlisted model (e.g. an arbitrary Ollama/LM Studio model)', async () => {
+    const getTextEmbedding = vi.fn().mockResolvedValue(new Array(768).fill(0));
+    const fakeEmbedModel = { getTextEmbedding } as any;
+
+    const dimensions = await getEmbeddingDimensions(fakeEmbedModel, 'some-arbitrary-local-model');
+
+    expect(dimensions).toBe(768);
+    expect(getTextEmbedding).toHaveBeenCalledWith(expect.any(String));
   });
 });

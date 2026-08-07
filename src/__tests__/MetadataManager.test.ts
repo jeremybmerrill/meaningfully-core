@@ -93,6 +93,7 @@ describe('MetadataManager', () => {
     expect(settings).toEqual({
       openAIKey: null,
       oLlamaBaseURL: null,
+      lmStudioBaseURL: null,
       azureOpenAIKey: null,
       azureOpenAIEndpoint: null,
       azureOpenAIApiVersion: '2024-02-01',
@@ -105,6 +106,7 @@ describe('MetadataManager', () => {
     const result = await metadataManager.setSettings({
       openAIKey: 'test-key',
       oLlamaBaseURL: 'http://localhost',
+      lmStudioBaseURL: 'http://localhost:1234',
       azureOpenAIKey: 'azure-key',
       azureOpenAIEndpoint: 'http://azure.endpoint',
       azureOpenAIApiVersion: '2024-02-01',

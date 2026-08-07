@@ -75,6 +75,7 @@ export abstract class MetadataManager {
     const DEFAULT_SETTINGS: Settings = {
       openAIKey: null,
       oLlamaBaseURL: null,
+      lmStudioBaseURL: null,
       azureOpenAIKey: null,
       azureOpenAIEndpoint: null,
       azureOpenAIApiVersion: "2024-02-01",

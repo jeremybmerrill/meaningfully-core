@@ -1,6 +1,6 @@
-import { 
-  Document, 
-  VectorStoreIndex, 
+import {
+  Document,
+  VectorStoreIndex,
   // OpenAIEmbedding,
   IngestionPipeline,
   TransformComponent,
@@ -15,7 +15,8 @@ import {
   SimpleDocumentStore,
   BaseDocumentStore,
   BaseIndexStore,
-  SimpleIndexStore
+  SimpleIndexStore,
+  type BaseEmbedding
 } from "llamaindex";
 import { OllamaEmbedding} from '@llamaindex/ollama'
 import { MistralAIEmbedding, MistralAIEmbeddingModelType } from '@llamaindex/mistral'
@@ -25,6 +26,7 @@ import { AzureOpenAIEmbedding } from "@llamaindex/azure";
 import { Sploder } from "./sploder.js";
 import { CustomSentenceSplitter } from "./sentenceSplitter.js";
 import { MockEmbedding } from "./mockEmbedding.js";
+import { LMStudioEmbedding } from "./lmStudioEmbedding.js";
 import { encodingForModel, type TiktokenModel } from "js-tiktoken";
 import { join } from "path";
 import type { EmbeddingConfig, Settings, MetadataFilter, Clients  } from "../types/index.js";
@@ -34,15 +36,28 @@ import { OpenAIEmbedding } from "@llamaindex/openai";
 import { BatchingWeaviateVectorStore } from "./batchingWeaviateVectorStore.js";
 import { ProgressVectorStoreIndex } from "./progressVectorStoreIndex.js";
 
-// unused, but probalby eventually will be used.
-// to be used by postgres store, which it' slooking increasingly like I have to enable again
+// Used by the postgres vector store, which needs a fixed vector column size up front.
+// Models not listed here (e.g. an arbitrary Ollama/LM Studio model) have their dimensions
+// determined by actually embedding a probe string -- see getEmbeddingDimensions below --
+// since none of these providers' model-listing APIs expose embedding dimensionality.
 const MODEL_DIMENSIONS: Record<string, number> = {
   "text-embedding-3-small": 1536,
   "text-embedding-3-large": 3072,
+  "text-embedding-ada-002": 1536,
   "mxbai-embed-large": 1024,
   "mistral-embed": 1024,
   "gemini-embedding-001": 768, // Gemini embedding model
 };
+
+// exported only for tests
+export async function getEmbeddingDimensions(embeddingModel: BaseEmbedding, modelName: string): Promise<number> {
+  const knownDimensions = MODEL_DIMENSIONS[modelName];
+  if (knownDimensions) {
+    return knownDimensions;
+  }
+  const probeEmbedding = await embeddingModel.getTextEmbedding("dimension probe");
+  return probeEmbedding.length;
+}
 
 const PRICE_PER_1M: Record<string, number> = {
   "text-embedding-3-small": 0.02,
@@ -79,6 +94,18 @@ export async function getOllamaEmbeddingModels(baseURL: string): Promise<string[
   );
 
   return embeddingModelNames.filter((name): name is string => name !== null);
+}
+
+// Queries a local LM Studio instance for installed models, keeping only those whose
+// "type" is "embeddings" (LM Studio's own REST API, distinct from its OpenAI-compatible one).
+export async function getLMStudioEmbeddingModels(baseURL: string): Promise<string[]> {
+  const host = baseURL.replace(/\/$/, "");
+  const response = await fetch(`${host}/api/v0/models`);
+  if (!response.ok) {
+    throw new Error(`Failed to list LM Studio models: ${response.status} ${response.statusText}`);
+  }
+  const { data } = (await response.json()) as { data: { id: string; type: string }[] };
+  return data.filter((model) => model.type === "embeddings").map((model) => model.id);
 }
 
 /* all transformations except the embedding step (which is handled by VectorStoreIndex.init) */
@@ -193,6 +220,14 @@ export function getEmbedModel(
     embedModel = new OllamaEmbedding({ model: config.modelName, config: {
       host: settings.oLlamaBaseURL ? settings.oLlamaBaseURL : undefined
     }, }); 
+  } else if (config.modelProvider === "lmstudio") {
+    if (!settings.lmStudioBaseURL) {
+      throw new Error("LM Studio base URL is required for LM Studio embedding models");
+    }
+    embedModel = new LMStudioEmbedding({
+      model: config.modelName,
+      baseURL: settings.lmStudioBaseURL,
+    });
   } else if (config.modelProvider === "azure") {
     if (!settings.azureOpenAIKey || !settings.azureOpenAIEndpoint) {
       throw new Error("Azure OpenAI API key and endpoint are required for Azure embedding models");
@@ -346,7 +381,7 @@ export async function createVectorStore(config: EmbeddingConfig, settings: Setti
       return new PGVectorStore({
         client: clients.postgresClient,
         tableName: "vecs_" + sanitizeProjectName(config.projectName),
-        dimensions: MODEL_DIMENSIONS[config.modelName] || 1536, // default to 1536 if model not found
+        dimensions: await getEmbeddingDimensions(embeddingModel, config.modelName),
         embeddingModel: embeddingModel
       });
 

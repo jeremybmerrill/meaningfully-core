@@ -55,6 +55,7 @@ const FAKE_SETTINGS = {
         azureOpenAIApiVersion: "2024-02-01",
         azureOpenAIEndpoint: "https://test.openai.azure.com",
         oLlamaBaseURL: "http://localhost:11434",
+        lmStudioBaseURL: "http://localhost:1234",
       }
 
 describe('MeaningfullyAPI', () => {
@@ -89,6 +90,9 @@ describe('MeaningfullyAPI', () => {
         if (url.endsWith('/api/show')) {
           return Promise.resolve({ ok: true, json: () => Promise.resolve({ capabilities: ['embedding'] }) });
         }
+        if (url.endsWith('/api/v0/models')) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ data: [] }) });
+        }
         throw new Error(`unexpected url ${url}`);
       });
 
@@ -101,6 +105,36 @@ describe('MeaningfullyAPI', () => {
 
       const { availableModelOptions, allModelOptions } = await api.getAvailableModelOptions();
       expect(availableModelOptions.ollama).toEqual(allModelOptions.ollama);
+    });
+
+    it('lists models installed in LM Studio rather than the hardcoded defaults', async () => {
+      (fetch as any).mockImplementation((url: string) => {
+        if (url.endsWith('/api/tags')) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) });
+        }
+        if (url.endsWith('/api/v0/models')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              data: [
+                { id: 'meta-llama-3.1-8b-instruct', type: 'llm' },
+                { id: 'text-embedding-all-minilm-l6-v2-embedding', type: 'embeddings' },
+              ],
+            }),
+          });
+        }
+        throw new Error(`unexpected url ${url}`);
+      });
+
+      const { availableModelOptions } = await api.getAvailableModelOptions();
+      expect(availableModelOptions.lmstudio).toEqual(['text-embedding-all-minilm-l6-v2-embedding']);
+    });
+
+    it('falls back to the default LM Studio model list when the LM Studio server is unreachable', async () => {
+      (fetch as any).mockRejectedValue(new Error('fetch failed'));
+
+      const { availableModelOptions, allModelOptions } = await api.getAvailableModelOptions();
+      expect(availableModelOptions.lmstudio).toEqual(allModelOptions.lmstudio);
     });
   });
 
@@ -264,6 +298,7 @@ describe('MeaningfullyAPI', () => {
         azureOpenAIApiVersion: "2024-02-01",
         azureOpenAIEndpoint: "https://test.openai.azure.com",
         oLlamaBaseURL:  "http://localhost:11434",
+        lmStudioBaseURL: "http://localhost:1234",
       });
     });
   });
