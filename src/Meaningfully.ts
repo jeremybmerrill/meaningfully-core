@@ -1,6 +1,6 @@
 import { MetadataManager } from './MetadataManager.js';
 import { loadDocumentsFromCsv } from './services/csvLoader.js';
-import { createEmbeddings, getIndex, search, searchBm25, previewResults, previewSample, getDocStore } from './api/embedding.js';
+import { createEmbeddings, getIndex, search, searchHybrid, previewResults, previewSample, getDocStore } from './api/embedding.js';
 import { getOllamaEmbeddingModels, getLMStudioEmbeddingModels } from './services/embeddings.js';
 import { sanitizeProjectName, capitalizeFirstLetter } from "./utils.js";
 import { join } from 'path';
@@ -242,12 +242,14 @@ export class MeaningfullyAPI {
       chunkSize: 1024, // not actually used, we just re-use a config object that has this option
       chunkOverlap: 20, // not actually used, we just re-use a config object that has this option
     };
-    if (searchMode === "bm25") {
-      // BM25 ranks the same indexed chunks by keyword relevance instead of embedding
-      // similarity, so it reads straight from the doc store rather than the vector index --
-      // and, unlike semantic search, doesn't support metadata filters (see searchBm25).
-      const docStore = await getDocStore(config, settings, this.clients);
-      return await searchBm25(docStore, query, n_results, offset);
+    if (searchMode === "hybrid") {
+      // Hybrid search folds BM25 keyword relevance into the embedding-similarity ranking (see
+      // searchHybrid), so it needs both the vector index and the doc store.
+      const [index, docStore] = await Promise.all([
+        getIndex(config, settings, this.clients),
+        getDocStore(config, settings, this.clients)
+      ]);
+      return await searchHybrid(index, docStore, query, n_results, filters, offset);
     }
     const index = await getIndex(config, settings, this.clients);
     return await search(index, query, n_results, filters, offset);

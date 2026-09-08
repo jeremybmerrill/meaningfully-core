@@ -3,6 +3,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Document, TextNode } from 'llamaindex';
 
+const { bm25RetrieveMock, Bm25RetrieverMock } = vi.hoisted(() => {
+  const bm25RetrieveMock = vi.fn();
+  const Bm25RetrieverMock = vi.fn().mockImplementation((options) => ({
+    options,
+    retrieve: bm25RetrieveMock
+  }));
+  return { bm25RetrieveMock, Bm25RetrieverMock };
+});
+vi.mock('@llamaindex/bm25-retriever', () => ({ Bm25Retriever: Bm25RetrieverMock }));
+
 // First, set up the mock before importing the module
 vi.mock(import("../embeddings.js"), async (importOriginal) => {
   const actual = await importOriginal()
@@ -19,8 +29,12 @@ vi.mock(import("../embeddings.js"), async (importOriginal) => {
 })
 
 // Now import the mocked functions
-import { transformDocumentsToNodes, getEmbedModel, getOllamaEmbeddingModels, getLMStudioEmbeddingModels, getEmbeddingDimensions } from '../embeddings.js';
+import { transformDocumentsToNodes, getEmbedModel, getOllamaEmbeddingModels, getLMStudioEmbeddingModels, getEmbeddingDimensions, searchDocumentsHybrid } from '../embeddings.js';
 import { LMStudioEmbedding } from '../lmStudioEmbedding.js';
+
+function nodeWithScore(id: string, score: number) {
+  return { node: { id_: id, getContent: () => id, metadata: {} }, score };
+}
 
 describe('transformDocumentsToNodes', () => {
   beforeEach(() => {
@@ -247,5 +261,65 @@ describe('getEmbeddingDimensions', () => {
 
     expect(dimensions).toBe(768);
     expect(getTextEmbedding).toHaveBeenCalledWith(expect.any(String));
+  });
+});
+
+describe('searchDocumentsHybrid', () => {
+  const mockDocStore = {} as any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('fuses vector and BM25 rankings by reciprocal rank, without metadata filters', async () => {
+    const vectorRetrieveMock = vi.fn().mockResolvedValue([
+      nodeWithScore('a', 0.9),
+      nodeWithScore('b', 0.8),
+      nodeWithScore('c', 0.7)
+    ]);
+    bm25RetrieveMock.mockResolvedValue([nodeWithScore('c', 5), nodeWithScore('a', 3)]);
+    const asRetriever = vi.fn().mockReturnValue({ retrieve: vectorRetrieveMock });
+    const fakeIndex = { asRetriever } as any;
+
+    const { results, hasMore } = await searchDocumentsHybrid(fakeIndex, mockDocStore, 'query', 10, undefined, 0);
+
+    // Both retrievers are queried at the same depth (no filters to widen the vector-side net for).
+    expect(asRetriever).toHaveBeenCalledWith({ similarityTopK: 11, filters: { filters: [] } });
+    expect(Bm25RetrieverMock).toHaveBeenCalledWith({ docStore: mockDocStore, topK: 11 });
+
+    // 'a' ranks #1 in vector and #2 in BM25; 'c' ranks #3 in vector and #1 in BM25 -- 'a' wins
+    // narrowly by finishing higher in more places, 'b' (BM25-absent) trails both.
+    expect(results.map((r: any) => r.node.id_)).toEqual(['a', 'c', 'b']);
+    expect(hasMore).toBe(false);
+  });
+
+  it('restricts the BM25 leg to the filtered vector candidate set via docIds, since Bm25Retriever cannot apply metadata filters directly', async () => {
+    const vectorResults = [
+      nodeWithScore('a', 0.9),
+      nodeWithScore('b', 0.8),
+      nodeWithScore('c', 0.7),
+      nodeWithScore('d', 0.6)
+    ];
+    const vectorRetrieveMock = vi.fn().mockResolvedValue(vectorResults);
+    bm25RetrieveMock.mockResolvedValue([nodeWithScore('d', 5), nodeWithScore('a', 3)]);
+    const asRetriever = vi.fn().mockReturnValue({ retrieve: vectorRetrieveMock });
+    const fakeIndex = { asRetriever } as any;
+    const filters = [{ key: 'foo', operator: '==' as const, value: 'bar' }];
+
+    const { results, hasMore } = await searchDocumentsHybrid(fakeIndex, mockDocStore, 'query', 2, filters, 0);
+
+    // The vector leg casts a much wider net than requested (topK=2) so the filtered candidate
+    // set handed to BM25 is close to complete, not just the first couple of matches.
+    expect(asRetriever).toHaveBeenCalledWith({ similarityTopK: 200, filters: { filters } });
+    expect(Bm25RetrieverMock).toHaveBeenCalledWith({
+      docStore: mockDocStore,
+      topK: 3,
+      docIds: ['a', 'b', 'c', 'd']
+    });
+
+    // Only the top 3 (retrievalDepth) of the 4 filtered vector results count toward fusion, so
+    // 'd' -- 4th in the vector list -- is credited solely via its #1 BM25 ranking.
+    expect(results.map((r: any) => r.node.id_)).toEqual(['a', 'd']);
+    expect(hasMore).toBe(true);
   });
 });

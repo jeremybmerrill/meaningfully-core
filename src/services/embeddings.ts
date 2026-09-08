@@ -475,26 +475,87 @@ export async function searchDocuments(
   };
 }
 
-// BM25 keyword search over the same chunks used for semantic search, via LlamaIndexTS's
-// Bm25Retriever. It scores every node in the doc store against the query rather than querying
-// a vector store, so (unlike searchDocuments) it doesn't support metadata filters.
-export async function searchDocumentsBm25(
+// Standard damping constant for reciprocal rank fusion (RRF); this is the same default used by
+// LlamaIndex Python's QueryFusionRetriever(mode="reciprocal_rerank"), and needs no tuning.
+const RRF_K = 60;
+
+// Merges multiple ranked result lists into one, by rank position rather than raw score -- this
+// is what makes it possible to combine BM25's keyword score with cosine similarity, which
+// aren't on comparable scales. Each occurrence of a node contributes 1/(RRF_K + rank) to its
+// fused score; a node appearing near the top of either list scores well.
+function reciprocalRankFusion(rankedLists: NodeWithScore[][], k: number = RRF_K): NodeWithScore[] {
+  const fusedScores = new Map<string, number>();
+  const nodeById = new Map<string, NodeWithScore["node"]>();
+
+  for (const rankedList of rankedLists) {
+    rankedList.forEach((result, rank) => {
+      const id = result.node.id_;
+      nodeById.set(id, result.node);
+      fusedScores.set(id, (fusedScores.get(id) ?? 0) + 1 / (k + rank + 1));
+    });
+  }
+
+  return Array.from(fusedScores.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, score]) => ({ node: nodeById.get(id)!, score }));
+}
+
+// Hybrid search: fuses LlamaIndexTS's vector-similarity retriever with its Bm25Retriever via
+// reciprocal rank fusion, so results benefit from both semantic and exact-keyword matching.
+// Bm25Retriever can't apply arbitrary metadata filters (it only takes a list of doc IDs to
+// restrict itself to), so when filters are given, the vector leg is queried first (with a
+// generous topK) and its matching doc IDs are handed to the BM25 leg -- both legs then rank
+// over the same filtered candidate set. Without filters, BM25 scores the whole doc store for
+// full recall.
+export async function searchDocumentsHybrid(
+  index: VectorStoreIndex,
   docStore: BaseDocumentStore,
   query: string,
   numResults: number = 10,
+  filters?: MetadataFilter[],
   offset: number = 0
 ) {
   const safeNumResults = Math.max(1, numResults);
   const safeOffset = Math.max(0, offset);
+  const retrievalDepth = safeOffset + safeNumResults + 1;
+  const hasFilters = !!filters?.length;
 
-  const retriever = new Bm25Retriever({
-    docStore,
-    topK: safeOffset + safeNumResults + 1
-  });
+  const metadataFilters: MetadataFilters = {
+    filters: filters ? filters : [],
+  };
 
-  const results = (await retriever.retrieve(query)) as NodeWithScore[];
-  const page = results.slice(safeOffset, safeOffset + safeNumResults);
-  const hasMore = results.length > (safeOffset + safeNumResults);
+  let vectorResults: NodeWithScore[];
+  let bm25Results: NodeWithScore[];
+  if (hasFilters) {
+    const vectorRetriever = index.asRetriever({
+      // Cast a wide net so the BM25 leg (restricted to these same doc IDs, below) sees close to
+      // the full set of documents matching the filters, not just the top few by similarity.
+      similarityTopK: Math.max(retrievalDepth, 200),
+      filters: metadataFilters
+    });
+    vectorResults = (await vectorRetriever.retrieve(query)) as NodeWithScore[];
+    const bm25Retriever = new Bm25Retriever({
+      docStore,
+      topK: retrievalDepth,
+      docIds: vectorResults.map((result) => result.node.id_)
+    });
+    bm25Results = (await bm25Retriever.retrieve(query)) as NodeWithScore[];
+    vectorResults = vectorResults.slice(0, retrievalDepth);
+  } else {
+    const vectorRetriever = index.asRetriever({
+      similarityTopK: retrievalDepth,
+      filters: metadataFilters
+    });
+    const bm25Retriever = new Bm25Retriever({ docStore, topK: retrievalDepth });
+    [vectorResults, bm25Results] = await Promise.all([
+      vectorRetriever.retrieve(query) as Promise<NodeWithScore[]>,
+      bm25Retriever.retrieve(query) as Promise<NodeWithScore[]>
+    ]);
+  }
+
+  const fused = reciprocalRankFusion([vectorResults, bm25Results]);
+  const page = fused.slice(safeOffset, safeOffset + safeNumResults);
+  const hasMore = fused.length > (safeOffset + safeNumResults);
 
   return {
     results: page,

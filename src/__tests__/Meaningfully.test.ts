@@ -17,7 +17,7 @@ vi.doMock('../api/embedding.js', () => ({
   getIndex: vi.fn(),
   getDocStore: vi.fn(),
   search: vi.fn().mockResolvedValue({ results: [{ id: 1, text: 'result' }], hasMore: false }),
-  searchBm25: vi.fn().mockResolvedValue({ results: [{ id: 2, text: 'bm25 result' }], hasMore: false }),
+  searchHybrid: vi.fn().mockResolvedValue({ results: [{ id: 2, text: 'hybrid result' }], hasMore: false }),
   createEmbeddings: vi.fn().mockResolvedValue({ success: true, error: null }),
   previewResults: vi.fn(),
   previewSample: vi.fn(),
@@ -262,7 +262,7 @@ describe('MeaningfullyAPI', () => {
       expect(mockMetadataManager.getDocumentSet).toHaveBeenCalledWith(1);
     });
 
-    it('uses BM25 keyword search, reading from the doc store instead of the vector index, when searchMode is "bm25"', async () => {
+    it('uses hybrid (semantic + BM25) search, fetching both the vector index and the doc store, when searchMode is "hybrid"', async () => {
       vi.spyOn(mockMetadataManager, 'getDocumentSet').mockResolvedValue({
         parameters: { modelName: 'testModel', modelProvider: 'openai', vectorStoreType: 'simple' },
         name: 'testDataset',
@@ -270,15 +270,16 @@ describe('MeaningfullyAPI', () => {
         uploadDate: new Date(),
         totalDocuments: 420
       });
-      const { getDocStore, searchBm25 } = await import('../api/embedding.js');
+      const { getIndex, getDocStore, searchHybrid } = await import('../api/embedding.js');
+      getIndex.mockResolvedValue('mockIndex');
       getDocStore.mockResolvedValue('mockDocStore');
-      searchBm25.mockClear();
+      searchHybrid.mockClear();
 
-      const results = await api.searchDocumentSet(1, 'query', 10, undefined, 0, 'bm25');
+      const results = await api.searchDocumentSet(1, 'query', 10, undefined, 0, 'hybrid');
 
-      expect(results).toEqual({ results: [{ id: 2, text: 'bm25 result' }], hasMore: false });
-      expect(searchBm25).toHaveBeenCalledWith('mockDocStore', 'query', 10, 0);
-      expect(searchBm25).toHaveBeenCalledTimes(1);
+      expect(results).toEqual({ results: [{ id: 2, text: 'hybrid result' }], hasMore: false });
+      expect(searchHybrid).toHaveBeenCalledWith('mockIndex', 'mockDocStore', 'query', 10, undefined, 0);
+      expect(searchHybrid).toHaveBeenCalledTimes(1);
     });
   });
 

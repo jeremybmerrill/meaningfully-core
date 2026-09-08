@@ -1,8 +1,8 @@
 //@ts-nocheck
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createEmbeddings, previewResults, previewSample, getDocStore, getIndex, search, searchBm25 } from '../embedding.js';
+import { createEmbeddings, previewResults, previewSample, getDocStore, getIndex, search, searchHybrid } from '../embedding.js';
 import { loadDocumentsFromCsv } from '../../services/csvLoader.js';
-import { transformDocumentsToNodes, estimateCost, searchDocuments, searchDocumentsBm25, getExistingVectorStoreIndex, persistNodes, getStorageContext } from '../../services/embeddings.js';
+import { transformDocumentsToNodes, estimateCost, searchDocuments, searchDocumentsHybrid, getExistingVectorStoreIndex, persistNodes, getStorageContext } from '../../services/embeddings.js';
 import { MetadataMode } from 'llamaindex';
 
 // filepath: /Users/jeremybmerrill/code/meaningfully/src/main/api/embedding.test.ts
@@ -168,30 +168,30 @@ describe('embedding.ts', () => {
         });
     });
 
-    describe('searchBm25', () => {
-        it('should return BM25 search results, keyed off the doc store rather than an index', async () => {
+    describe('searchHybrid', () => {
+        it('should return fused (semantic + BM25) search results', async () => {
             const mockResults = [
-                { node: { getContent: () => 'content1', metadata: { row: 1 } }, score: 4.2 },
-                { node: { getContent: () => 'content2', metadata: { row: 2 } }, score: 1.1 }
+                { node: { getContent: () => 'content1', metadata: { row: 1 } }, score: 0.032 },
+                { node: { getContent: () => 'content2', metadata: { row: 2 } }, score: 0.016 }
             ];
-            searchDocumentsBm25.mockResolvedValue({ results: mockResults, hasMore: true });
+            searchDocumentsHybrid.mockResolvedValue({ results: mockResults, hasMore: true });
 
-            const result = await searchBm25('mockDocStore', 'query', 10, 5);
+            const result = await searchHybrid('mockIndex', 'mockDocStore', 'query', 10, undefined, 5);
 
-            expect(searchDocumentsBm25).toHaveBeenCalledWith('mockDocStore', 'query', 10, 5);
+            expect(searchDocumentsHybrid).toHaveBeenCalledWith('mockIndex', 'mockDocStore', 'query', 10, undefined, 5);
             expect(result).toEqual({
                 results: [
-                    { text: 'content1', score: 4.2, metadata: { row: 1 } },
-                    { text: 'content2', score: 1.1, metadata: { row: 2 } }
+                    { text: 'content1', score: 0.032, metadata: { row: 1 } },
+                    { text: 'content2', score: 0.016, metadata: { row: 2 } }
                 ],
                 hasMore: true
             });
         });
 
         it('should handle no search results', async () => {
-            searchDocumentsBm25.mockResolvedValue({ results: [], hasMore: false });
+            searchDocumentsHybrid.mockResolvedValue({ results: [], hasMore: false });
 
-            const result = await searchBm25('mockDocStore', 'query');
+            const result = await searchHybrid('mockIndex', 'mockDocStore', 'query');
 
             expect(result).toEqual({ results: [], hasMore: false });
         });

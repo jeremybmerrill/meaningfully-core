@@ -1,4 +1,4 @@
-import { transformDocumentsToNodes, estimateCost, searchDocuments, searchDocumentsBm25, getExistingVectorStoreIndex, persistNodes, persistDocuments, getStorageContext } from "../services/embeddings.js";
+import { transformDocumentsToNodes, estimateCost, searchDocuments, searchDocumentsHybrid, getExistingVectorStoreIndex, persistNodes, persistDocuments, getStorageContext } from "../services/embeddings.js";
 import type { EmbeddingConfig, EmbeddingResult, SearchResponse, PreviewResult, SampleDocument, Settings, MetadataFilter, Clients } from "../types/index.js";
 import { loadDocumentsFromCsv } from "../services/csvLoader.js";
 import { MetadataMode, Document, type BaseDocumentStore, type NodeWithScore } from "llamaindex";
@@ -166,15 +166,16 @@ export async function search(
   return toSearchResponse(results, hasMore);
 }
 
-// BM25 keyword search: ranks the same indexed chunks by keyword relevance rather than
-// embedding similarity. Metadata filters aren't supported in this mode -- see
-// searchDocumentsBm25.
-export async function searchBm25(
+// Hybrid search: fuses embedding-similarity ranking with BM25 keyword ranking -- see
+// searchDocumentsHybrid.
+export async function searchHybrid(
+  index: any,
   docStore: BaseDocumentStore,
   query: string,
   numResults: number = 10,
+  filters?: MetadataFilter[],
   offset: number = 0
 ): Promise<SearchResponse> {
-  const { results, hasMore } = await searchDocumentsBm25(docStore, query, numResults, offset);
+  const { results, hasMore } = await searchDocumentsHybrid(index, docStore, query, numResults, filters, offset);
   return toSearchResponse(results, hasMore);
 }
