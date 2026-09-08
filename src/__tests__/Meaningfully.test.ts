@@ -15,7 +15,9 @@ vi.mock('path');
 // Mock the embedding module before importing MeaningfullyAPI
 vi.doMock('../api/embedding.js', () => ({
   getIndex: vi.fn(),
+  getDocStore: vi.fn(),
   search: vi.fn().mockResolvedValue({ results: [{ id: 1, text: 'result' }], hasMore: false }),
+  searchBm25: vi.fn().mockResolvedValue({ results: [{ id: 2, text: 'bm25 result' }], hasMore: false }),
   createEmbeddings: vi.fn().mockResolvedValue({ success: true, error: null }),
   previewResults: vi.fn(),
   previewSample: vi.fn(),
@@ -258,6 +260,25 @@ describe('MeaningfullyAPI', () => {
 
       expect(results).toEqual({ results: [{ id: 1, text: 'result' }], hasMore: false });
       expect(mockMetadataManager.getDocumentSet).toHaveBeenCalledWith(1);
+    });
+
+    it('uses BM25 keyword search, reading from the doc store instead of the vector index, when searchMode is "bm25"', async () => {
+      vi.spyOn(mockMetadataManager, 'getDocumentSet').mockResolvedValue({
+        parameters: { modelName: 'testModel', modelProvider: 'openai', vectorStoreType: 'simple' },
+        name: 'testDataset',
+        documentSetId: 5,
+        uploadDate: new Date(),
+        totalDocuments: 420
+      });
+      const { getDocStore, searchBm25 } = await import('../api/embedding.js');
+      getDocStore.mockResolvedValue('mockDocStore');
+      searchBm25.mockClear();
+
+      const results = await api.searchDocumentSet(1, 'query', 10, undefined, 0, 'bm25');
+
+      expect(results).toEqual({ results: [{ id: 2, text: 'bm25 result' }], hasMore: false });
+      expect(searchBm25).toHaveBeenCalledWith('mockDocStore', 'query', 10, 0);
+      expect(searchBm25).toHaveBeenCalledTimes(1);
     });
   });
 

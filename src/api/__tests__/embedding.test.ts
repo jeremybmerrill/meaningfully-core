@@ -1,8 +1,8 @@
 //@ts-nocheck
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createEmbeddings, previewResults, previewSample, getDocStore, getIndex, search } from '../embedding.js';
+import { createEmbeddings, previewResults, previewSample, getDocStore, getIndex, search, searchBm25 } from '../embedding.js';
 import { loadDocumentsFromCsv } from '../../services/csvLoader.js';
-import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, getStorageContext } from '../../services/embeddings.js';
+import { transformDocumentsToNodes, estimateCost, searchDocuments, searchDocumentsBm25, getExistingVectorStoreIndex, persistNodes, getStorageContext } from '../../services/embeddings.js';
 import { MetadataMode } from 'llamaindex';
 
 // filepath: /Users/jeremybmerrill/code/meaningfully/src/main/api/embedding.test.ts
@@ -165,6 +165,35 @@ describe('embedding.ts', () => {
                 ],
                 hasMore: false
             });
+        });
+    });
+
+    describe('searchBm25', () => {
+        it('should return BM25 search results, keyed off the doc store rather than an index', async () => {
+            const mockResults = [
+                { node: { getContent: () => 'content1', metadata: { row: 1 } }, score: 4.2 },
+                { node: { getContent: () => 'content2', metadata: { row: 2 } }, score: 1.1 }
+            ];
+            searchDocumentsBm25.mockResolvedValue({ results: mockResults, hasMore: true });
+
+            const result = await searchBm25('mockDocStore', 'query', 10, 5);
+
+            expect(searchDocumentsBm25).toHaveBeenCalledWith('mockDocStore', 'query', 10, 5);
+            expect(result).toEqual({
+                results: [
+                    { text: 'content1', score: 4.2, metadata: { row: 1 } },
+                    { text: 'content2', score: 1.1, metadata: { row: 2 } }
+                ],
+                hasMore: true
+            });
+        });
+
+        it('should handle no search results', async () => {
+            searchDocumentsBm25.mockResolvedValue({ results: [], hasMore: false });
+
+            const result = await searchBm25('mockDocStore', 'query');
+
+            expect(result).toEqual({ results: [], hasMore: false });
         });
     });
 });

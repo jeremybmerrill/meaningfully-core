@@ -35,6 +35,7 @@ import * as fs from 'fs';
 import { OpenAIEmbedding } from "@llamaindex/openai";
 import { BatchingWeaviateVectorStore } from "./batchingWeaviateVectorStore.js";
 import { ProgressVectorStoreIndex } from "./progressVectorStoreIndex.js";
+import { Bm25Retriever } from "@llamaindex/bm25-retriever";
 
 // Used by the postgres vector store, which needs a fixed vector column size up front.
 // Models not listed here (e.g. an arbitrary Ollama/LM Studio model) have their dimensions
@@ -462,6 +463,33 @@ export async function searchDocuments(
   const retriever = index.asRetriever({
     similarityTopK: safeOffset + safeNumResults + 1,
     filters: metadataFilters
+  });
+
+  const results = (await retriever.retrieve(query)) as NodeWithScore[];
+  const page = results.slice(safeOffset, safeOffset + safeNumResults);
+  const hasMore = results.length > (safeOffset + safeNumResults);
+
+  return {
+    results: page,
+    hasMore
+  };
+}
+
+// BM25 keyword search over the same chunks used for semantic search, via LlamaIndexTS's
+// Bm25Retriever. It scores every node in the doc store against the query rather than querying
+// a vector store, so (unlike searchDocuments) it doesn't support metadata filters.
+export async function searchDocumentsBm25(
+  docStore: BaseDocumentStore,
+  query: string,
+  numResults: number = 10,
+  offset: number = 0
+) {
+  const safeNumResults = Math.max(1, numResults);
+  const safeOffset = Math.max(0, offset);
+
+  const retriever = new Bm25Retriever({
+    docStore,
+    topK: safeOffset + safeNumResults + 1
   });
 
   const results = (await retriever.retrieve(query)) as NodeWithScore[];

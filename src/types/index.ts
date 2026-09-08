@@ -1,3 +1,7 @@
+// "semantic" ranks by embedding similarity (the default); "bm25" ranks by BM25 keyword
+// relevance over the same indexed chunks, via LlamaIndexTS's Bm25Retriever.
+export type SearchMode = "semantic" | "bm25";
+
 export interface SearchResult {
   text: string;
   score: number;

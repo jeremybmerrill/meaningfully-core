@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@llamaindex/azure": "^0.1.31",
+    "@llamaindex/bm25-retriever": "0.0.10",
     "@llamaindex/google": "^0.3.18",
     "@llamaindex/mistral": "^0.1.14",
     "@llamaindex/ollama": "^0.1.14",

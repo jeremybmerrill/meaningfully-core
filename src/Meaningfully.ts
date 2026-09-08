@@ -1,10 +1,10 @@
 import { MetadataManager } from './MetadataManager.js';
 import { loadDocumentsFromCsv } from './services/csvLoader.js';
-import { createEmbeddings, getIndex, search, previewResults, previewSample, getDocStore } from './api/embedding.js';
+import { createEmbeddings, getIndex, search, searchBm25, previewResults, previewSample, getDocStore } from './api/embedding.js';
 import { getOllamaEmbeddingModels, getLMStudioEmbeddingModels } from './services/embeddings.js';
 import { sanitizeProjectName, capitalizeFirstLetter } from "./utils.js";
 import { join } from 'path';
-import type { DocumentSetParams, Settings, MetadataFilter, Clients, SearchResponse, SampleDocument } from './types/index.js';
+import type { DocumentSetParams, Settings, MetadataFilter, Clients, SearchResponse, SampleDocument, SearchMode } from './types/index.js';
 import fs from 'fs';
 
 type HasFilePath = {filePath: string};
@@ -222,14 +222,15 @@ export class MeaningfullyAPI {
     query: string,
     n_results: number = 10,
     filters?: MetadataFilter[],
-    offset: number = 0
+    offset: number = 0,
+    searchMode: SearchMode = "semantic"
   ): Promise<SearchResponse> {
     const documentSet = await this.metadataManager.getDocumentSet(documentSetId);
     const settings = await this.metadataManager.getSettings();
     if (!documentSet) {
       throw new Error('Document set not found');
-    } 
-    const index = await getIndex({
+    }
+    const config = {
       modelName: documentSet.parameters.modelName as string,
       modelProvider: documentSet.parameters.modelProvider as string,
       splitIntoSentences: documentSet.parameters.splitIntoSentences as boolean,
@@ -240,10 +241,17 @@ export class MeaningfullyAPI {
       storagePath: this.storagePath,
       chunkSize: 1024, // not actually used, we just re-use a config object that has this option
       chunkOverlap: 20, // not actually used, we just re-use a config object that has this option
-    }, settings, this.clients);
-    const results = await search(index, query, n_results, filters, offset);
-    return results;
-  }   
+    };
+    if (searchMode === "bm25") {
+      // BM25 ranks the same indexed chunks by keyword relevance instead of embedding
+      // similarity, so it reads straight from the doc store rather than the vector index --
+      // and, unlike semantic search, doesn't support metadata filters (see searchBm25).
+      const docStore = await getDocStore(config, settings, this.clients);
+      return await searchBm25(docStore, query, n_results, offset);
+    }
+    const index = await getIndex(config, settings, this.clients);
+    return await search(index, query, n_results, filters, offset);
+  }
 
   async getDocument(documentSetId: number, documentNodeId: string){
     const documentSet = await this.metadataManager.getDocumentSet(documentSetId);
