@@ -1,8 +1,8 @@
 //@ts-nocheck
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createEmbeddings, previewResults, previewSample, getDocStore, getIndex, search } from '../embedding.js';
+import { createEmbeddings, previewResults, previewSample, getDocStore, getIndex, search, searchHybrid } from '../embedding.js';
 import { loadDocumentsFromCsv } from '../../services/csvLoader.js';
-import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, getStorageContext } from '../../services/embeddings.js';
+import { transformDocumentsToNodes, estimateCost, searchDocuments, searchDocumentsHybrid, getExistingVectorStoreIndex, persistNodes, getStorageContext } from '../../services/embeddings.js';
 import { MetadataMode } from 'llamaindex';
 
 // filepath: /Users/jeremybmerrill/code/meaningfully/src/main/api/embedding.test.ts
@@ -165,6 +165,35 @@ describe('embedding.ts', () => {
                 ],
                 hasMore: false
             });
+        });
+    });
+
+    describe('searchHybrid', () => {
+        it('should return fused (semantic + BM25) search results', async () => {
+            const mockResults = [
+                { node: { getContent: () => 'content1', metadata: { row: 1 } }, score: 0.032 },
+                { node: { getContent: () => 'content2', metadata: { row: 2 } }, score: 0.016 }
+            ];
+            searchDocumentsHybrid.mockResolvedValue({ results: mockResults, hasMore: true });
+
+            const result = await searchHybrid('mockIndex', 'mockDocStore', 'query', 10, undefined, 5);
+
+            expect(searchDocumentsHybrid).toHaveBeenCalledWith('mockIndex', 'mockDocStore', 'query', 10, undefined, 5);
+            expect(result).toEqual({
+                results: [
+                    { text: 'content1', score: 0.032, metadata: { row: 1 } },
+                    { text: 'content2', score: 0.016, metadata: { row: 2 } }
+                ],
+                hasMore: true
+            });
+        });
+
+        it('should handle no search results', async () => {
+            searchDocumentsHybrid.mockResolvedValue({ results: [], hasMore: false });
+
+            const result = await searchHybrid('mockIndex', 'mockDocStore', 'query');
+
+            expect(result).toEqual({ results: [], hasMore: false });
         });
     });
 });

@@ -1,3 +1,7 @@
+// "semantic" ranks by embedding similarity (the default); "hybrid" additionally folds in BM25
+// keyword relevance over the same indexed chunks, combining the two via reciprocal rank fusion.
+export type SearchMode = "semantic" | "hybrid";
+
 export interface SearchResult {
   text: string;
   score: number;

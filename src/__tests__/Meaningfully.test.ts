@@ -15,7 +15,9 @@ vi.mock('path');
 // Mock the embedding module before importing MeaningfullyAPI
 vi.doMock('../api/embedding.js', () => ({
   getIndex: vi.fn(),
+  getDocStore: vi.fn(),
   search: vi.fn().mockResolvedValue({ results: [{ id: 1, text: 'result' }], hasMore: false }),
+  searchHybrid: vi.fn().mockResolvedValue({ results: [{ id: 2, text: 'hybrid result' }], hasMore: false }),
   createEmbeddings: vi.fn().mockResolvedValue({ success: true, error: null }),
   previewResults: vi.fn(),
   previewSample: vi.fn(),
@@ -258,6 +260,26 @@ describe('MeaningfullyAPI', () => {
 
       expect(results).toEqual({ results: [{ id: 1, text: 'result' }], hasMore: false });
       expect(mockMetadataManager.getDocumentSet).toHaveBeenCalledWith(1);
+    });
+
+    it('uses hybrid (semantic + BM25) search, fetching both the vector index and the doc store, when searchMode is "hybrid"', async () => {
+      vi.spyOn(mockMetadataManager, 'getDocumentSet').mockResolvedValue({
+        parameters: { modelName: 'testModel', modelProvider: 'openai', vectorStoreType: 'simple' },
+        name: 'testDataset',
+        documentSetId: 5,
+        uploadDate: new Date(),
+        totalDocuments: 420
+      });
+      const { getIndex, getDocStore, searchHybrid } = await import('../api/embedding.js');
+      getIndex.mockResolvedValue('mockIndex');
+      getDocStore.mockResolvedValue('mockDocStore');
+      searchHybrid.mockClear();
+
+      const results = await api.searchDocumentSet(1, 'query', 10, undefined, 0, 'hybrid');
+
+      expect(results).toEqual({ results: [{ id: 2, text: 'hybrid result' }], hasMore: false });
+      expect(searchHybrid).toHaveBeenCalledWith('mockIndex', 'mockDocStore', 'query', 10, undefined, 0);
+      expect(searchHybrid).toHaveBeenCalledTimes(1);
     });
   });
 

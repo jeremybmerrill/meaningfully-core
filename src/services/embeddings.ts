@@ -35,6 +35,7 @@ import * as fs from 'fs';
 import { OpenAIEmbedding } from "@llamaindex/openai";
 import { BatchingWeaviateVectorStore } from "./batchingWeaviateVectorStore.js";
 import { ProgressVectorStoreIndex } from "./progressVectorStoreIndex.js";
+import { Bm25Retriever } from "./bm25Retriever.js";
 
 // Used by the postgres vector store, which needs a fixed vector column size up front.
 // Models not listed here (e.g. an arbitrary Ollama/LM Studio model) have their dimensions
@@ -467,6 +468,118 @@ export async function searchDocuments(
   const results = (await retriever.retrieve(query)) as NodeWithScore[];
   const page = results.slice(safeOffset, safeOffset + safeNumResults);
   const hasMore = results.length > (safeOffset + safeNumResults);
+
+  return {
+    results: page,
+    hasMore
+  };
+}
+
+// Standard damping constant for reciprocal rank fusion (RRF); this is the same default used by
+// LlamaIndex Python's QueryFusionRetriever(mode="reciprocal_rerank"), and needs no tuning.
+const RRF_K = 60;
+
+// Merges multiple ranked result lists into one, by rank position rather than raw score -- this
+// is what makes it possible to combine BM25's keyword score with cosine similarity, which
+// aren't on comparable scales. Each occurrence of a node contributes 1/(RRF_K + rank) to its
+// fused score; a node appearing near the top of either list scores well.
+function reciprocalRankFusion(rankedLists: NodeWithScore[][], k: number = RRF_K): NodeWithScore[] {
+  const fusedScores = new Map<string, number>();
+  const nodeById = new Map<string, NodeWithScore["node"]>();
+
+  for (const rankedList of rankedLists) {
+    rankedList.forEach((result, rank) => {
+      const id = result.node.id_;
+      nodeById.set(id, result.node);
+      fusedScores.set(id, (fusedScores.get(id) ?? 0) + 1 / (k + rank + 1));
+    });
+  }
+
+  return Array.from(fusedScores.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, score]) => ({ node: nodeById.get(id)!, score }));
+}
+
+// Hybrid search: fuses LlamaIndexTS's vector-similarity retriever with its Bm25Retriever via
+// reciprocal rank fusion, so results benefit from both semantic and exact-keyword matching.
+// Bm25Retriever can't apply arbitrary metadata filters (it only takes a list of doc IDs to
+// restrict itself to), so when filters are given, the vector leg is queried first (with a
+// generous topK) and its matching doc IDs are handed to the BM25 leg -- both legs then rank
+// over the same filtered candidate set. Without filters, BM25 scores the whole doc store for
+// full recall.
+export async function searchDocumentsHybrid(
+  index: VectorStoreIndex,
+  docStore: BaseDocumentStore,
+  query: string,
+  numResults: number = 10,
+  filters?: MetadataFilter[],
+  offset: number = 0
+) {
+  const safeNumResults = Math.max(1, numResults);
+  const safeOffset = Math.max(0, offset);
+  const retrievalDepth = safeOffset + safeNumResults + 1;
+  const hasFilters = !!filters?.length;
+
+  const metadataFilters: MetadataFilters = {
+    filters: filters ? filters : [],
+  };
+
+  let vectorResults: NodeWithScore[];
+  // The wider, untruncated vector leg (in the filtered branch) -- kept around only so display
+  // scores can use a node's real similarity even if it fell outside the RRF fusion depth below.
+  let vectorResultsForScoring: NodeWithScore[];
+  let bm25Results: NodeWithScore[];
+  if (hasFilters) {
+    const vectorRetriever = index.asRetriever({
+      // Cast a wide net so the BM25 leg (restricted to these same doc IDs, below) sees close to
+      // the full set of documents matching the filters, not just the top few by similarity.
+      similarityTopK: Math.max(retrievalDepth, 200),
+      filters: metadataFilters
+    });
+    vectorResultsForScoring = (await vectorRetriever.retrieve(query)) as NodeWithScore[];
+    const bm25Retriever = new Bm25Retriever({
+      docStore,
+      topK: retrievalDepth,
+      nodes: vectorResultsForScoring.map((result) => result.node),
+      docIds: vectorResultsForScoring.map((result) => result.node.id_)
+    });
+    bm25Results = (await bm25Retriever.retrieve(query)) as NodeWithScore[];
+    vectorResults = vectorResultsForScoring.slice(0, retrievalDepth);
+  } else {
+    const vectorRetriever = index.asRetriever({
+      similarityTopK: Math.max(retrievalDepth, 200),
+      filters: metadataFilters
+    });
+    vectorResultsForScoring = (await vectorRetriever.retrieve(query)) as NodeWithScore[];
+    const bm25Retriever = new Bm25Retriever({
+      docStore,
+      topK: retrievalDepth,
+      nodes: vectorResultsForScoring.map((result) => result.node),
+      docIds: vectorResultsForScoring.map((result) => result.node.id_)
+    });
+    bm25Results = (await bm25Retriever.retrieve(query)) as NodeWithScore[];
+    vectorResults = vectorResultsForScoring.slice(0, retrievalDepth);
+  }
+
+  const vectorScoreById = new Map(vectorResultsForScoring.map((result) => [result.node.id_, result.score]));
+  bm25Results = bm25Results.filter((result) => vectorScoreById.has(result.node.id_));
+
+  const fused = reciprocalRankFusion([vectorResults, bm25Results]);
+
+  // Copilot says: 
+  // The fused RRF score isn't independently interpretable (it's just a rank-based blend), so
+  // swap in each result's actual cosine similarity score for display instead -- sourced from the
+  // vector leg, which is the only one of the two legs with a comparable score. A node that
+  // matched only via BM25 keyword search has no similarity score to show, so it falls back to 0.
+  // Note this means displayed scores won't necessarily be monotonically decreasing down the
+  // page, since the list is still ordered by the (undisplayed) fused rank, not by this score.
+  const fusedWithSimilarityScores = fused.map((result) => ({
+    node: result.node,
+    score: vectorScoreById.get(result.node.id_) ?? 0
+  }));
+
+  const page = fusedWithSimilarityScores.slice(safeOffset, safeOffset + safeNumResults);
+  const hasMore = fusedWithSimilarityScores.length > (safeOffset + safeNumResults);
 
   return {
     results: page,

@@ -1,8 +1,21 @@
-import { transformDocumentsToNodes, estimateCost, searchDocuments, getExistingVectorStoreIndex, persistNodes, persistDocuments, getStorageContext } from "../services/embeddings.js";
+import { transformDocumentsToNodes, estimateCost, searchDocuments, searchDocumentsHybrid, getExistingVectorStoreIndex, persistNodes, persistDocuments, getStorageContext } from "../services/embeddings.js";
 import type { EmbeddingConfig, EmbeddingResult, SearchResponse, PreviewResult, SampleDocument, Settings, MetadataFilter, Clients } from "../types/index.js";
 import { loadDocumentsFromCsv } from "../services/csvLoader.js";
-import { MetadataMode, Document } from "llamaindex";
+import { MetadataMode, Document, type BaseDocumentStore, type NodeWithScore } from "llamaindex";
 import { ProgressManager } from "../services/progressManager.js";
+
+function toSearchResponse(results: NodeWithScore[], hasMore: boolean): SearchResponse {
+  return {
+    results: results.map((result: any) => ({
+      text: result.node.getContent(MetadataMode.NONE),
+      score: result.score ?? 0,
+      metadata: result.node.metadata,
+      //  @ts-ignore
+      sourceNodeId: result.node.relationships?.SOURCE?.nodeId
+    })),
+    hasMore
+  };
+}
 
 // Take 10 rows from the middle of the dataset for preview.
 // We take a consistent 10 so that the results of the preview are consistent (i.e. with a
@@ -150,14 +163,19 @@ export async function search(
   offset: number = 0
 ): Promise<SearchResponse> {
   const { results, hasMore } = await searchDocuments(index, query, numResults, filters, offset);
-  return {
-    results: results.map((result: any) => ({
-      text: result.node.getContent(MetadataMode.NONE),
-      score: result.score ?? 0,
-      metadata: result.node.metadata,
-      //  @ts-ignore
-      sourceNodeId: result.node.relationships?.SOURCE?.nodeId
-    })),
-    hasMore
-  };
+  return toSearchResponse(results, hasMore);
+}
+
+// Hybrid search: fuses embedding-similarity ranking with BM25 keyword ranking -- see
+// searchDocumentsHybrid.
+export async function searchHybrid(
+  index: any,
+  docStore: BaseDocumentStore,
+  query: string,
+  numResults: number = 10,
+  filters?: MetadataFilter[],
+  offset: number = 0
+): Promise<SearchResponse> {
+  const { results, hasMore } = await searchDocumentsHybrid(index, docStore, query, numResults, filters, offset);
+  return toSearchResponse(results, hasMore);
 }
