@@ -22,7 +22,6 @@
   },
   "dependencies": {
     "@llamaindex/azure": "^0.1.31",
-    "@llamaindex/bm25-retriever": "0.0.10",
     "@llamaindex/google": "^0.3.18",
     "@llamaindex/mistral": "^0.1.14",
     "@llamaindex/ollama": "^0.1.14",
@@ -34,6 +33,7 @@
     "llamaindex": "^0.11.14",
     "lodash": "^4.17.21",
     "natural": "^8.1.0",
+    "okapibm25": "^1.4.1",
     "openai": "^5.9.0",
     "papaparse": "^5.5.3",
     "pgvector": "^0.2.0"

@@ -11,7 +11,7 @@ const { bm25RetrieveMock, Bm25RetrieverMock } = vi.hoisted(() => {
   }));
   return { bm25RetrieveMock, Bm25RetrieverMock };
 });
-vi.mock('@llamaindex/bm25-retriever', () => ({ Bm25Retriever: Bm25RetrieverMock }));
+vi.mock('../bm25Retriever.js', () => ({ Bm25Retriever: Bm25RetrieverMock }));
 
 // First, set up the mock before importing the module
 vi.mock(import("../embeddings.js"), async (importOriginal) => {
@@ -272,25 +272,49 @@ describe('searchDocumentsHybrid', () => {
   });
 
   it('fuses vector and BM25 rankings by reciprocal rank, without metadata filters', async () => {
-    const vectorRetrieveMock = vi.fn().mockResolvedValue([
+    const vectorResults = [
       nodeWithScore('a', 0.9),
       nodeWithScore('b', 0.8),
       nodeWithScore('c', 0.7)
-    ]);
+    ];
+    const vectorRetrieveMock = vi.fn().mockResolvedValue(vectorResults);
     bm25RetrieveMock.mockResolvedValue([nodeWithScore('c', 5), nodeWithScore('a', 3)]);
     const asRetriever = vi.fn().mockReturnValue({ retrieve: vectorRetrieveMock });
     const fakeIndex = { asRetriever } as any;
 
     const { results, hasMore } = await searchDocumentsHybrid(fakeIndex, mockDocStore, 'query', 10, undefined, 0);
 
-    // Both retrievers are queried at the same depth (no filters to widen the vector-side net for).
-    expect(asRetriever).toHaveBeenCalledWith({ similarityTopK: 11, filters: { filters: [] } });
-    expect(Bm25RetrieverMock).toHaveBeenCalledWith({ docStore: mockDocStore, topK: 11 });
+    // The vector leg casts a wider net so the BM25 leg ranks matching vector-node IDs, not
+    // original documents from the doc store.
+    expect(asRetriever).toHaveBeenCalledWith({ similarityTopK: 200, filters: { filters: [] } });
+    expect(Bm25RetrieverMock).toHaveBeenCalledWith({
+      docStore: mockDocStore,
+      topK: 11,
+      nodes: vectorResults.map((result) => result.node),
+      docIds: ['a', 'b', 'c']
+    });
 
     // 'a' ranks #1 in vector and #2 in BM25; 'c' ranks #3 in vector and #1 in BM25 -- 'a' wins
     // narrowly by finishing higher in more places, 'b' (BM25-absent) trails both.
     expect(results.map((r: any) => r.node.id_)).toEqual(['a', 'c', 'b']);
     expect(hasMore).toBe(false);
+
+    // Displayed scores are the underlying vector similarity, not the fused RRF rank score, so
+    // they aren't necessarily monotonically decreasing (here 'c' outranks 'b' despite a lower
+    // similarity score, since 'c' also matched BM25).
+    expect(results.map((r: any) => r.score)).toEqual([0.9, 0.7, 0.8]);
+  });
+
+  it('ignores BM25 results whose IDs do not belong to vector candidates', async () => {
+    const vectorRetrieveMock = vi.fn().mockResolvedValue([nodeWithScore('a', 0.9)]);
+    bm25RetrieveMock.mockResolvedValue([nodeWithScore('z', 5), nodeWithScore('a', 3)]);
+    const asRetriever = vi.fn().mockReturnValue({ retrieve: vectorRetrieveMock });
+    const fakeIndex = { asRetriever } as any;
+
+    const { results } = await searchDocumentsHybrid(fakeIndex, mockDocStore, 'query', 10, undefined, 0);
+
+    const scoresById = Object.fromEntries(results.map((r: any) => [r.node.id_, r.score]));
+    expect(scoresById).toEqual({ a: 0.9 });
   });
 
   it('restricts the BM25 leg to the filtered vector candidate set via docIds, since Bm25Retriever cannot apply metadata filters directly', async () => {
@@ -314,6 +338,7 @@ describe('searchDocumentsHybrid', () => {
     expect(Bm25RetrieverMock).toHaveBeenCalledWith({
       docStore: mockDocStore,
       topK: 3,
+      nodes: vectorResults.map((result) => result.node),
       docIds: ['a', 'b', 'c', 'd']
     });
 
@@ -321,5 +346,10 @@ describe('searchDocumentsHybrid', () => {
     // 'd' -- 4th in the vector list -- is credited solely via its #1 BM25 ranking.
     expect(results.map((r: any) => r.node.id_)).toEqual(['a', 'd']);
     expect(hasMore).toBe(true);
+
+    // 'd' still displays its real similarity score (0.6) despite ranking via BM25, since the
+    // wider unfiltered vector leg had already computed it -- only a node with no similarity at
+    // all (never seen by the vector leg) would fall back to 0.
+    expect(results.map((r: any) => r.score)).toEqual([0.9, 0.6]);
   });
 });

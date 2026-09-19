@@ -35,7 +35,7 @@ import * as fs from 'fs';
 import { OpenAIEmbedding } from "@llamaindex/openai";
 import { BatchingWeaviateVectorStore } from "./batchingWeaviateVectorStore.js";
 import { ProgressVectorStoreIndex } from "./progressVectorStoreIndex.js";
-import { Bm25Retriever } from "@llamaindex/bm25-retriever";
+import { Bm25Retriever } from "./bm25Retriever.js";
 
 // Used by the postgres vector store, which needs a fixed vector column size up front.
 // Models not listed here (e.g. an arbitrary Ollama/LM Studio model) have their dimensions
@@ -525,6 +525,9 @@ export async function searchDocumentsHybrid(
   };
 
   let vectorResults: NodeWithScore[];
+  // The wider, untruncated vector leg (in the filtered branch) -- kept around only so display
+  // scores can use a node's real similarity even if it fell outside the RRF fusion depth below.
+  let vectorResultsForScoring: NodeWithScore[];
   let bm25Results: NodeWithScore[];
   if (hasFilters) {
     const vectorRetriever = index.asRetriever({
@@ -533,29 +536,50 @@ export async function searchDocumentsHybrid(
       similarityTopK: Math.max(retrievalDepth, 200),
       filters: metadataFilters
     });
-    vectorResults = (await vectorRetriever.retrieve(query)) as NodeWithScore[];
+    vectorResultsForScoring = (await vectorRetriever.retrieve(query)) as NodeWithScore[];
     const bm25Retriever = new Bm25Retriever({
       docStore,
       topK: retrievalDepth,
-      docIds: vectorResults.map((result) => result.node.id_)
+      nodes: vectorResultsForScoring.map((result) => result.node),
+      docIds: vectorResultsForScoring.map((result) => result.node.id_)
     });
     bm25Results = (await bm25Retriever.retrieve(query)) as NodeWithScore[];
-    vectorResults = vectorResults.slice(0, retrievalDepth);
+    vectorResults = vectorResultsForScoring.slice(0, retrievalDepth);
   } else {
     const vectorRetriever = index.asRetriever({
-      similarityTopK: retrievalDepth,
+      similarityTopK: Math.max(retrievalDepth, 200),
       filters: metadataFilters
     });
-    const bm25Retriever = new Bm25Retriever({ docStore, topK: retrievalDepth });
-    [vectorResults, bm25Results] = await Promise.all([
-      vectorRetriever.retrieve(query) as Promise<NodeWithScore[]>,
-      bm25Retriever.retrieve(query) as Promise<NodeWithScore[]>
-    ]);
+    vectorResultsForScoring = (await vectorRetriever.retrieve(query)) as NodeWithScore[];
+    const bm25Retriever = new Bm25Retriever({
+      docStore,
+      topK: retrievalDepth,
+      nodes: vectorResultsForScoring.map((result) => result.node),
+      docIds: vectorResultsForScoring.map((result) => result.node.id_)
+    });
+    bm25Results = (await bm25Retriever.retrieve(query)) as NodeWithScore[];
+    vectorResults = vectorResultsForScoring.slice(0, retrievalDepth);
   }
 
+  const vectorScoreById = new Map(vectorResultsForScoring.map((result) => [result.node.id_, result.score]));
+  bm25Results = bm25Results.filter((result) => vectorScoreById.has(result.node.id_));
+
   const fused = reciprocalRankFusion([vectorResults, bm25Results]);
-  const page = fused.slice(safeOffset, safeOffset + safeNumResults);
-  const hasMore = fused.length > (safeOffset + safeNumResults);
+
+  // Copilot says: 
+  // The fused RRF score isn't independently interpretable (it's just a rank-based blend), so
+  // swap in each result's actual cosine similarity score for display instead -- sourced from the
+  // vector leg, which is the only one of the two legs with a comparable score. A node that
+  // matched only via BM25 keyword search has no similarity score to show, so it falls back to 0.
+  // Note this means displayed scores won't necessarily be monotonically decreasing down the
+  // page, since the list is still ordered by the (undisplayed) fused rank, not by this score.
+  const fusedWithSimilarityScores = fused.map((result) => ({
+    node: result.node,
+    score: vectorScoreById.get(result.node.id_) ?? 0
+  }));
+
+  const page = fusedWithSimilarityScores.slice(safeOffset, safeOffset + safeNumResults);
+  const hasMore = fusedWithSimilarityScores.length > (safeOffset + safeNumResults);
 
   return {
     results: page,
