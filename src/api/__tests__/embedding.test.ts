@@ -168,6 +168,59 @@ describe('embedding.ts', () => {
         });
     });
 
+    describe('search across multiple text columns', () => {
+        const hit = (row, column, score) => ({
+            node: { id_: `${row}-${column}-${score}`, getContent: () => `${column} of row ${row}`, metadata: { mf_row: row, mf_column: column } },
+            score
+        });
+
+        it('keeps only the best result for each row', async () => {
+            // ranked best-first, as the retriever returns them
+            searchDocuments.mockResolvedValue({
+                results: [hit(1, 'a', 0.9), hit(1, 'b', 0.8), hit(2, 'b', 0.7), hit(1, 'a', 0.6), hit(3, 'a', 0.5)],
+                hasMore: false
+            });
+
+            const result = await search('index', 'query', 10, undefined, 0, 2);
+
+            expect(result.results.map((r) => [r.metadata.mf_row, r.score])).toEqual([[1, 0.9], [2, 0.7], [3, 0.5]]);
+            expect(result.hasMore).toBe(false);
+        });
+
+        it('pages over deduplicated rows, not raw results', async () => {
+            searchDocuments.mockResolvedValue({
+                results: [hit(1, 'a', 0.9), hit(1, 'b', 0.8), hit(2, 'a', 0.7), hit(3, 'a', 0.6)],
+                hasMore: false
+            });
+
+            const result = await search('index', 'query', 1, undefined, 1, 2);
+
+            expect(result.results.map((r) => r.metadata.mf_row)).toEqual([2]);
+            expect(result.hasMore).toBe(true);
+        });
+
+        it('fetches deeper when duplicates leave too few distinct rows', async () => {
+            searchDocuments.mockImplementation(async (index, query, depth) => ({
+                // every row matches in many chunks; rows only become distinct further down
+                results: [hit(1, 'a', 0.9), hit(1, 'a', 0.8), hit(1, 'b', 0.7), hit(1, 'b', 0.6), hit(2, 'a', 0.5)].slice(0, depth),
+                hasMore: depth < 5
+            }));
+
+            const result = await search('index', 'query', 2, undefined, 0, 2);
+
+            expect(result.results.map((r) => r.metadata.mf_row)).toEqual([1, 2]);
+            expect(searchDocuments.mock.calls.length).toBeGreaterThan(1);
+        });
+
+        it('does not deduplicate for a single text column', async () => {
+            searchDocuments.mockResolvedValue({ results: [hit(1, 'a', 0.9), hit(1, 'a', 0.8)], hasMore: false });
+
+            const result = await search('index', 'query');
+
+            expect(result.results).toHaveLength(2);
+        });
+    });
+
     describe('searchHybrid', () => {
         it('should return fused (semantic + BM25) search results', async () => {
             const mockResults = [

@@ -278,7 +278,7 @@ describe('MeaningfullyAPI', () => {
       const results = await api.searchDocumentSet(1, 'query', 10, undefined, 0, 'hybrid');
 
       expect(results).toEqual({ results: [{ id: 2, text: 'hybrid result' }], hasMore: false });
-      expect(searchHybrid).toHaveBeenCalledWith('mockIndex', 'mockDocStore', 'query', 10, undefined, 0);
+      expect(searchHybrid).toHaveBeenCalledWith('mockIndex', 'mockDocStore', 'query', 10, undefined, 0, 1);
       expect(searchHybrid).toHaveBeenCalledTimes(1);
     });
   });
