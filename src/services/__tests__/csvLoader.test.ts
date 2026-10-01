@@ -1,7 +1,7 @@
 //@ts-nocheck
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'fs';
-import { loadDocumentsFromCsv } from '../csvLoader.js';
+import { loadDocumentsFromCsv, loadDocumentsFromCsvColumns } from '../csvLoader.js';
 import { Document } from 'llamaindex';
 import Papa from 'papaparse';
 
@@ -78,6 +78,27 @@ describe('csvLoader.ts', () => {
         ]));
         });
     });
+});
+
+describe('loadDocumentsFromCsvColumns', () => {
+  it('makes one document per row per text column, tagged with row and column', () => {
+    readFileSync.mockReturnValue('');
+    Papa.parse.mockReturnValue({
+      data: [
+        { q1: 'answer 1a', q2: 'answer 2a', id: '1' },
+        { q1: 'answer 1b', q2: null, id: '2' }
+      ]
+    });
+
+    const result = loadDocumentsFromCsvColumns('path/to/csv', ['q1', 'q2']);
+
+    expect(remove_id(result)).toEqual(remove_id([
+      new Document({ text: 'answer 1a', metadata: { q2: 'answer 2a', id: '1', mf_row: 0, mf_column: 'q1' } }),
+      new Document({ text: 'answer 2a', metadata: { q1: 'answer 1a', id: '1', mf_row: 0, mf_column: 'q2' } }),
+      new Document({ text: 'answer 1b', metadata: { q2: '', id: '2', mf_row: 1, mf_column: 'q1' } }),
+      new Document({ text: null, metadata: { q1: 'answer 1b', id: '2', mf_row: 1, mf_column: 'q2' } }),
+    ]));
+  });
 });
 
 function remove_id(list_of_documents): Document[] {
