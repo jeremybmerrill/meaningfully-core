@@ -120,7 +120,8 @@ export class MeaningfullyAPI {
         projectName: data.datasetName,
         storagePath: this.storagePath,
         chunkSize: data.chunkSize,
-        chunkOverlap: data.chunkOverlap
+        chunkOverlap: data.chunkOverlap,
+        embeddedMetadataColumns: data.embeddedMetadataColumns
       });
   } catch (error) {
     throw error;
@@ -143,7 +144,8 @@ export class MeaningfullyAPI {
       projectName: data.datasetName,
       storagePath: this.storagePath,
       chunkSize: data.chunkSize,
-      chunkOverlap: data.chunkOverlap
+      chunkOverlap: data.chunkOverlap,
+      embeddedMetadataColumns: data.embeddedMetadataColumns
     });
   }
 
@@ -158,6 +160,7 @@ export class MeaningfullyAPI {
         description: data.description,
         textColumns: data.textColumns,
         metadataColumns: data.metadataColumns,
+        embeddedMetadataColumns: data.embeddedMetadataColumns ?? [],
         splitIntoSentences: data.splitIntoSentences,
         combineSentencesIntoChunks: data.combineSentencesIntoChunks,
         sploderMaxSize: data.sploderMaxSize,
@@ -202,6 +205,7 @@ export class MeaningfullyAPI {
           storagePath:  this.storagePath,
           chunkSize: data.chunkSize,
           chunkOverlap: data.chunkOverlap,
+          embeddedMetadataColumns: data.embeddedMetadataColumns,
         }, embedSettings, this.clients);
         if (!ret.success) {
           throw new Error(ret.error);
