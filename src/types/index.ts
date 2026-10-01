@@ -62,6 +62,8 @@ export interface DocumentSetParams {
   description: string,
   textColumns: string[],
   metadataColumns: string[],
+  // metadata columns whose contents are also embedded along with the text (see EmbeddingConfig)
+  embeddedMetadataColumns?: string[],
   splitIntoSentences: boolean,
   combineSentencesIntoChunks: boolean,
   sploderMaxSize: number,
@@ -85,6 +87,10 @@ export interface EmbeddingConfig {
   sploderMaxSize: number;
   chunkSize: number;
   chunkOverlap: number;
+  // Metadata columns whose values are embedded along with every chunk of the text, to enrich it
+  // (e.g. a short "location" column that a narrative may not mention). All other metadata is
+  // excluded from the embedding. Still stored as metadata, so they can be shown and filtered on.
+  embeddedMetadataColumns?: string[];
 }
 
 
