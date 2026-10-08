@@ -1,5 +1,5 @@
 import { MetadataManager } from './MetadataManager.js';
-import { loadDocumentsFromCsv } from './services/csvLoader.js';
+import { loadDocumentsFromCsv, loadDocumentsFromCsvColumns } from './services/csvLoader.js';
 import { createEmbeddings, getIndex, search, searchHybrid, previewResults, previewSample, getDocStore } from './api/embedding.js';
 import { getOllamaEmbeddingModels, getLMStudioEmbeddingModels } from './services/embeddings.js';
 import { sanitizeProjectName, capitalizeFirstLetter } from "./utils.js";
@@ -17,6 +17,14 @@ const maskKey = (key: string | null, n: number = MASKING_PREFIX_LENGTH): string 
   return (key.length > (n*2)) ? key.slice(0, n) + "*******" + key.slice(key.length - n) : key;
 };
 
+
+// One document per CSV row; or, if several text columns are being searched, one per row per column
+// (tagged with its row/column, so results can be deduplicated by row -- see dedupeByRow).
+async function loadDocuments(filePath: string, textColumns: string[]) {
+  return textColumns.length > 1
+    ? loadDocumentsFromCsvColumns(filePath, textColumns)
+    : loadDocumentsFromCsv(filePath, textColumns[0] as string);
+}
 
 export class MeaningfullyAPI {
   private metadataManager: MetadataManager;
@@ -103,7 +111,7 @@ export class MeaningfullyAPI {
       if (!data.textColumns[0]) {
         throw new Error("No text column specified for preview.");
       }
-      const documents = await loadDocumentsFromCsv(data.filePath, data.textColumns[0] as string);
+      const documents = await loadDocuments(data.filePath, data.textColumns);
       if (documents.length === 0) {
         return {
           success: false,
@@ -177,39 +185,36 @@ export class MeaningfullyAPI {
 
     // Load and process the documents
     try {
-      // Process each text column
-      for (const textColumn of data.textColumns) {
-        const documents = await loadDocumentsFromCsv(data.filePath, textColumn);
-        
-        if (documents.length === 0) {
-          console.timeEnd("createEmbeddings Run Time");
-          return {
-            success: false,
-            error: "That CSV does not appear to contain any documents. Please check the file and try again.",
-          };
-        }
+      const documents = await loadDocuments(data.filePath, data.textColumns);
+      
+      if (documents.length === 0) {
+        console.timeEnd("createEmbeddings Run Time");
+        return {
+          success: false,
+          error: "That CSV does not appear to contain any documents. Please check the file and try again.",
+        };
+      }
 
-        // Update total documents count
-        await this.metadataManager.updateDocumentCount(documentSetId, documents.length);
+      // Update total documents count
+      await this.metadataManager.updateDocumentCount(documentSetId, documents.length / data.textColumns.length); // one document per row per text column
 
-        // Create embeddings for this column
-        let ret = await createEmbeddings(documents, {
-          modelName: data.modelName,
-          modelProvider: data.modelProvider,
-          splitIntoSentences: data.splitIntoSentences,
-          combineSentencesIntoChunks: data.combineSentencesIntoChunks,
-          sploderMaxSize: 100, // TODO: make configurable
-          vectorStoreType: vectorStoreType,
-          projectName: data.datasetName,
-                        // via https://medium.com/cameron-nokes/how-to-store-user-data-in-electron-3ba6bf66bc1e
-          storagePath:  this.storagePath,
-          chunkSize: data.chunkSize,
-          chunkOverlap: data.chunkOverlap,
-          embeddedMetadataColumns: data.embeddedMetadataColumns,
-        }, embedSettings, this.clients);
-        if (!ret.success) {
-          throw new Error(ret.error);
-        }
+      // Create embeddings (for all the text columns together)
+      let ret = await createEmbeddings(documents, {
+        modelName: data.modelName,
+        modelProvider: data.modelProvider,
+        splitIntoSentences: data.splitIntoSentences,
+        combineSentencesIntoChunks: data.combineSentencesIntoChunks,
+        sploderMaxSize: 100, // TODO: make configurable
+        vectorStoreType: vectorStoreType,
+        projectName: data.datasetName,
+                      // via https://medium.com/cameron-nokes/how-to-store-user-data-in-electron-3ba6bf66bc1e
+        storagePath:  this.storagePath,
+        chunkSize: data.chunkSize,
+        chunkOverlap: data.chunkOverlap,
+        embeddedMetadataColumns: data.embeddedMetadataColumns,
+      }, embedSettings, this.clients);
+      if (!ret.success) {
+        throw new Error(ret.error);
       }
       return { success: true, documentSetId };
     } catch (error) {
@@ -246,6 +251,8 @@ export class MeaningfullyAPI {
       chunkSize: 1024, // not actually used, we just re-use a config object that has this option
       chunkOverlap: 20, // not actually used, we just re-use a config object that has this option
     };
+    // with several text columns, each row has several matching documents, which are deduplicated by row
+    const numTextColumns = (documentSet.parameters.textColumns as string[] | undefined)?.length ?? 1;
     if (searchMode === "hybrid") {
       // Hybrid search folds BM25 keyword relevance into the embedding-similarity ranking (see
       // searchHybrid), so it needs both the vector index and the doc store.
@@ -253,10 +260,10 @@ export class MeaningfullyAPI {
         getIndex(config, settings, this.clients),
         getDocStore(config, settings, this.clients)
       ]);
-      return await searchHybrid(index, docStore, query, n_results, filters, offset);
+      return await searchHybrid(index, docStore, query, n_results, filters, offset, numTextColumns);
     }
     const index = await getIndex(config, settings, this.clients);
-    return await search(index, query, n_results, filters, offset);
+    return await search(index, query, n_results, filters, offset, numTextColumns);
   }
 
   async getDocument(documentSetId: number, documentNodeId: string){
