@@ -450,6 +450,18 @@ export async function createIndexStore(config: EmbeddingConfig, settings: Settin
 
 }
 
+// Callers cross an IPC boundary, so numResults/offset can arrive as something other than a
+// number (e.g. a stray DOM event). Math.max(1, <non-number>) is NaN, which silently turns topK
+// into NaN and the page slice into []; fall back to the defaults instead.
+function sanitizePaging(numResults: unknown, offset: unknown) {
+  const count = Number(numResults);
+  const start = Number(offset);
+  return {
+    safeNumResults: Number.isFinite(count) ? Math.max(1, Math.floor(count)) : 10,
+    safeOffset: Number.isFinite(start) ? Math.max(0, Math.floor(start)) : 0,
+  };
+}
+
 export async function searchDocuments(
   index: VectorStoreIndex,
   query: string,
@@ -457,8 +469,7 @@ export async function searchDocuments(
   filters?: MetadataFilter[],
   offset: number = 0
 ) {
-  const safeNumResults = Math.max(1, numResults);
-  const safeOffset = Math.max(0, offset);
+  const { safeNumResults, safeOffset } = sanitizePaging(numResults, offset);
 
   const metadataFilters: MetadataFilters = {
     filters: filters ? filters : [],
@@ -518,8 +529,7 @@ export async function searchDocumentsHybrid(
   filters?: MetadataFilter[],
   offset: number = 0
 ) {
-  const safeNumResults = Math.max(1, numResults);
-  const safeOffset = Math.max(0, offset);
+  const { safeNumResults, safeOffset } = sanitizePaging(numResults, offset);
   const retrievalDepth = safeOffset + safeNumResults + 1;
   const hasFilters = !!filters?.length;
 

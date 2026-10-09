@@ -29,7 +29,7 @@ vi.mock(import("../embeddings.js"), async (importOriginal) => {
 })
 
 // Now import the mocked functions
-import { transformDocumentsToNodes, getEmbedModel, getOllamaEmbeddingModels, getLMStudioEmbeddingModels, getEmbeddingDimensions, searchDocumentsHybrid } from '../embeddings.js';
+import { transformDocumentsToNodes, getEmbedModel, getOllamaEmbeddingModels, getLMStudioEmbeddingModels, getEmbeddingDimensions, searchDocuments, searchDocumentsHybrid } from '../embeddings.js';
 import { LMStudioEmbedding } from '../lmStudioEmbedding.js';
 
 function nodeWithScore(id: string, score: number) {
@@ -272,6 +272,36 @@ describe('getEmbeddingDimensions', () => {
 
     expect(dimensions).toBe(768);
     expect(getTextEmbedding).toHaveBeenCalledWith(expect.any(String));
+  });
+});
+
+describe('searchDocuments paging', () => {
+  const makeIndex = () => {
+    const retrieve = vi.fn().mockResolvedValue(Array.from({ length: 30 }, (_, i) => nodeWithScore(`n${i}`, 1 - i / 100)));
+    const asRetriever = vi.fn().mockReturnValue({ retrieve });
+    return { asRetriever, index: { asRetriever } as any };
+  };
+
+  // searchDocuments is mocked at the top of this file, so exercise the real implementation
+  const realSearchDocuments = async (...args: Parameters<typeof searchDocuments>) =>
+    (await vi.importActual<typeof import('../embeddings.js')>('../embeddings.js')).searchDocuments(...args);
+
+  it('falls back to defaults when numResults is not a number (e.g. a click event passed through by mistake)', async () => {
+    const { asRetriever, index } = makeIndex();
+
+    const { results, hasMore } = await realSearchDocuments(index, 'asdf', { type: 'click' } as any, undefined, 0);
+
+    expect(asRetriever).toHaveBeenCalledWith({ similarityTopK: 11, filters: { filters: [] } });
+    expect(results).toHaveLength(10);
+    expect(hasMore).toBe(true);
+  });
+
+  it('falls back to a zero offset when offset is not a number', async () => {
+    const { index } = makeIndex();
+
+    const { results } = await realSearchDocuments(index, 'asdf', 5, undefined, 'nope' as any);
+
+    expect(results.map((r: any) => r.node.id_)).toEqual(['n0', 'n1', 'n2', 'n3', 'n4']);
   });
 });
 
