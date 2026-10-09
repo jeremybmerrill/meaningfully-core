@@ -1,6 +1,6 @@
 import { transformDocumentsToNodes, estimateCost, searchDocuments, searchDocumentsHybrid, getExistingVectorStoreIndex, persistNodes, persistDocuments, getStorageContext } from "../services/embeddings.js";
 import type { EmbeddingConfig, EmbeddingResult, SearchResponse, PreviewResult, SampleDocument, Settings, MetadataFilter, Clients } from "../types/index.js";
-import { loadDocumentsFromCsv } from "../services/csvLoader.js";
+import { loadDocumentsFromCsv, ROW_KEY } from "../services/csvLoader.js";
 import { MetadataMode, Document, type BaseDocumentStore, type NodeWithScore } from "llamaindex";
 import { ProgressManager } from "../services/progressManager.js";
 
@@ -155,13 +155,48 @@ export async function getIndex(config: EmbeddingConfig, settings: Settings, clie
   return await getExistingVectorStoreIndex(config, settings, clients);
 }
 
+// When several text columns are searched, each row has several documents (one per column, each
+// split into several chunks), so the same row can match many times. Collapse those to the best
+// match per row. `fetch` returns the top `depth` ranked results (and whether there were more); we
+// keep asking for more until there are enough distinct rows to fill the requested page.
+async function dedupeByRow(
+  fetch: (depth: number) => Promise<{ results: NodeWithScore[], hasMore: boolean }>,
+  numResults: number,
+  offset: number,
+  numTextColumns: number
+): Promise<{ results: NodeWithScore[], hasMore: boolean }> {
+  const wanted = offset + Math.max(1, numResults);
+  let depth = (wanted + 1) * numTextColumns;
+  while (true) {
+    const fetched = await fetch(depth);
+    const seenRows = new Set<unknown>();
+    const rows = fetched.results.filter((result) => {
+      const row = (result.node as any).metadata?.[ROW_KEY];
+      if (row === undefined) return true;
+      if (seenRows.has(row)) return false;
+      seenRows.add(row);
+      return true;
+    });
+    if (rows.length > wanted || !fetched.hasMore) {
+      return { results: rows.slice(offset, wanted), hasMore: rows.length > wanted };
+    }
+    depth *= 2;
+  }
+}
+
 export async function search(
   index: any,
   query: string,
   numResults: number = 10,
   filters?: MetadataFilter[],
-  offset: number = 0
+  offset: number = 0,
+  numTextColumns: number = 1
 ): Promise<SearchResponse> {
+  if (numTextColumns > 1) {
+    const { results, hasMore } = await dedupeByRow(
+      (depth) => searchDocuments(index, query, depth, filters, 0), numResults, offset, numTextColumns);
+    return toSearchResponse(results, hasMore);
+  }
   const { results, hasMore } = await searchDocuments(index, query, numResults, filters, offset);
   return toSearchResponse(results, hasMore);
 }
@@ -174,8 +209,14 @@ export async function searchHybrid(
   query: string,
   numResults: number = 10,
   filters?: MetadataFilter[],
-  offset: number = 0
+  offset: number = 0,
+  numTextColumns: number = 1
 ): Promise<SearchResponse> {
+  if (numTextColumns > 1) {
+    const { results, hasMore } = await dedupeByRow(
+      (depth) => searchDocumentsHybrid(index, docStore, query, depth, filters, 0), numResults, offset, numTextColumns);
+    return toSearchResponse(results, hasMore);
+  }
   const { results, hasMore } = await searchDocumentsHybrid(index, docStore, query, numResults, filters, offset);
   return toSearchResponse(results, hasMore);
 }

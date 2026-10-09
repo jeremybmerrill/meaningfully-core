@@ -1,7 +1,7 @@
 //@ts-nocheck
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Document, TextNode } from 'llamaindex';
+import { Document, TextNode, MetadataMode } from 'llamaindex';
 
 const { bm25RetrieveMock, Bm25RetrieverMock } = vi.hoisted(() => {
   const bm25RetrieveMock = vi.fn();
@@ -106,6 +106,17 @@ describe('transformDocumentsToNodes', () => {
 
     const nodes = await transformDocumentsToNodes(mockDocuments, mockConfig, mockSettings)
     expect(nodes[0].excludedEmbedMetadataKeys).toEqual(['key1', 'key2']);
+  });
+
+  it('should include embeddedMetadataColumns in the embedding, but still exclude other metadata', async () => {
+    const mockDocuments = [
+      new Document({ text: 'Document 1', metadata: { title: 'A title', key1: 'value1' } }),
+    ];
+
+    const nodes = await transformDocumentsToNodes(mockDocuments, { ...mockConfig, embeddedMetadataColumns: ['title'] }, mockSettings);
+    expect(nodes[0].excludedEmbedMetadataKeys).toEqual(['key1']);
+    expect(nodes[0].getContent(MetadataMode.EMBED)).toContain('A title');
+    expect(nodes[0].getContent(MetadataMode.EMBED)).not.toContain('value1');
   });
 });
 

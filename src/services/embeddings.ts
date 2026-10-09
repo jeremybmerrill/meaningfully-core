@@ -5,6 +5,7 @@ import {
   IngestionPipeline,
   TransformComponent,
   TextNode,
+  MetadataMode,
   ModalityType,
   type MetadataFilters,
   type NodeWithScore,
@@ -143,7 +144,8 @@ export function estimateCost(nodes: TextNode[], modelName: string): {
     console.warn(`Tokenizer for model ${modelName} not found. Using fallback tokenizer.`);
   }
   const tokenCount = nodes.reduce((sum, node) => {
-    return sum + tokenizer.encode(node.text).length;
+    // EMBED mode includes any embeddedMetadataColumns stored in the node's metadata
+    return sum + tokenizer.encode(node.getContent(MetadataMode.EMBED)).length;
   }, 0);
 
   const estimatedPrice = tokenCount * (pricePer1M / 1_000_000);
@@ -188,9 +190,10 @@ export async function transformDocumentsToNodes(
   const transformations = getBaseTransformations(config);
 
   // llama-index stupidly includes all the metadata in the embedding, which is a waste of tokens
-  // so we exclude everything except the text column from the embedding
+  // so we exclude everything except the text column (and any embeddedMetadataColumns) from the embedding
+  const embeddedMetadataColumns = config.embeddedMetadataColumns ?? [];
   for (const document of documents) {
-    document.excludedEmbedMetadataKeys = Object.keys(document.metadata);
+    document.excludedEmbedMetadataKeys = Object.keys(document.metadata).filter((k) => !embeddedMetadataColumns.includes(k));
   }
   console.time("transformDocumentsToNodes transformDocuments Run Time");
   // remove empty documents. we can't meaningfully embed these, so we're just gonna ignore 'em.
