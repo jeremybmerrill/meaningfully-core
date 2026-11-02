@@ -73,6 +73,12 @@ export class ProgressVectorStoreIndex extends VectorStoreIndex {
       this.insertNodesToStore.bind(this),
     );
     await this.indexStore.addIndexStruct(this.indexStruct);
+    // persistNodes holds the whole nodes array across chunks; without this each chunk's embeddings
+    // (e.g. 1536 floats per node) stay reachable until the end, and large CSVs run out of heap.
+    for (const node of nodes) {
+      // @ts-ignore -- clearing the embedding frees it once the vector store has its own copy
+      node.embedding = undefined;
+    }
   }
 
   async getNodeEmbeddingResults(
