@@ -61,18 +61,13 @@ export class MeaningfullyAPI {
     const result = await this.metadataManager.getDocumentSet(documentSetId);
 
     if (result){
-      // Delete the document set from the database
-      await this.metadataManager.deleteDocumentSet(documentSetId);
       // Delete the associated files from the filesystem
       if (result.parameters.vectorStoreType === 'postgres'){
         if (this.clients.postgresClient) {
-          try {
-            await this.deletePostgresVectorStore(result.name)
-            await this.deletePostgresIndexStore(result.name)
-            await this.deletePostgresDocStore(result.name)
-          } catch (error) {
-            console.error(`Error deleting Postgres tables for ${sanitizeProjectName(result.name)}`, error);
-          }
+          // not caught: if a drop fails, the record stays so the delete can be retried
+          await this.deletePostgresVectorStore(result.name)
+          await this.deletePostgresIndexStore(result.name)
+          await this.deletePostgresDocStore(result.name)
         }
       } else if (result.parameters.vectorStoreType === 'weaviate'){
         if (this.clients.weaviateClient) {
@@ -92,6 +87,8 @@ export class MeaningfullyAPI {
         this.deleteSimpleIndexStore(result.name);
         this.deleteSimpleVectorStore(result.name);
       }
+      // Delete the document set from the database (last, so a failed cleanup above doesn't orphan the data)
+      await this.metadataManager.deleteDocumentSet(documentSetId);
     }
     return { success: true };
   }
@@ -160,6 +157,11 @@ export class MeaningfullyAPI {
   async uploadCsv(data: DocumentSetParamsFilePath) {
     // figure out if weaviate is available
     const vectorStoreType = this.getVectorStoreType();
+    // Table/file names are derived from the sanitized name, so two sets that sanitize alike would share (and delete) each other's data.
+    const { documents: existingSets } = await this.metadataManager.getDocumentSets(1, Number.MAX_SAFE_INTEGER);
+    if (existingSets.some((set) => sanitizeProjectName(set.name) === sanitizeProjectName(data.datasetName))) {
+      throw new Error(`A dataset named "${data.datasetName}" (or one with a name that differs only by punctuation or spaces) already exists. Please choose a different name.`);
+    }
     // First create the document set record
     const documentSetId = await this.metadataManager.addDocumentSet({
       name: data.datasetName,
@@ -219,7 +221,7 @@ export class MeaningfullyAPI {
       return { success: true, documentSetId };
     } catch (error) {
       // If something fails, we should probably delete the document set
-      await this.metadataManager.deleteDocumentSet(documentSetId);
+      await this.deleteDocumentSet(documentSetId);
       console.error("deleting document set due to failure ", documentSetId, error);
       throw error;
     }
@@ -387,6 +389,7 @@ export class MeaningfullyAPI {
         await this.clients.postgresClient.query('DROP TABLE IF EXISTS vecs_' + sanitizeProjectName(projectName));
       } catch (error) {
         console.error(`Error deleting Postgres tables for ${sanitizeProjectName(projectName)}`, error);
+        throw error;
       }
     }
   }
@@ -396,6 +399,7 @@ export class MeaningfullyAPI {
         await this.clients.postgresClient.query('DROP TABLE IF EXISTS idx_' + sanitizeProjectName(projectName ));
       } catch (error) {
         console.error(`Error deleting Postgres tables for ${sanitizeProjectName(projectName)}`, error);
+        throw error;
       }
     }
   }
@@ -405,6 +409,7 @@ export class MeaningfullyAPI {
         await this.clients.postgresClient.query('DROP TABLE IF EXISTS docs_' + sanitizeProjectName(projectName));
       } catch (error) {
         console.error(`Error deleting Postgres tables for ${sanitizeProjectName(projectName)}`, error);
+        throw error;
       }
     }
 

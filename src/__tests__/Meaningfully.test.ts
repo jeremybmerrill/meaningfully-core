@@ -70,6 +70,7 @@ describe('MeaningfullyAPI', () => {
     vi.spyOn(mockMetadataManager, 'addDocumentSet').mockResolvedValue(1);
     vi.spyOn(mockMetadataManager, 'getSettings').mockResolvedValue(FAKE_SETTINGS);
     vi.spyOn(mockMetadataManager, 'deleteDocumentSet').mockResolvedValue();
+    vi.spyOn(mockMetadataManager, 'getDocumentSets').mockResolvedValue({ documents: [], total: 0 });
     api = new MeaningfullyAPI({
       storagePath: 'mock_storage_path',
       metadataManager: mockMetadataManager,
@@ -203,8 +204,16 @@ describe('MeaningfullyAPI', () => {
       const createEmbeddingsMock = vi.spyOn(await import('../api/embedding.js'), 'createEmbeddings');
       createEmbeddingsMock.mockResolvedValue({ success: false, error: 'Embedding error' });
 
+      vi.spyOn(mockMetadataManager, 'getDocumentSet').mockResolvedValue({
+        parameters: { vectorStoreType: 'simple' }, name: 'testDataset', documentSetId: 1, uploadDate: new Date(), totalDocuments: 0
+      });
+      const rmSyncMock = vi.spyOn(fs, 'rmSync').mockImplementation(() => {});
+
       await expect(api.uploadCsv(mockData)).rejects.toThrow('Embedding error');
       expect(mockMetadataManager.deleteDocumentSet).toHaveBeenCalledWith(1);
+      // the failed upload's stored data is cleaned up too, not just the metadata row
+      expect(rmSyncMock).toHaveBeenCalled();
+      rmSyncMock.mockRestore();
 
       createEmbeddingsMock.mockRestore(); // Restore the original implementation after the test
       loadDocumentsFromCsvMock.mockRestore();
@@ -280,6 +289,17 @@ describe('MeaningfullyAPI', () => {
       expect(results).toEqual({ results: [{ id: 2, text: 'hybrid result' }], hasMore: false });
       expect(searchHybrid).toHaveBeenCalledWith('mockIndex', 'mockDocStore', 'query', 10, undefined, 0, 1);
       expect(searchHybrid).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('uploadCsv name collisions', () => {
+    it('rejects a name that sanitizes to an existing dataset name', async () => {
+      vi.spyOn(mockMetadataManager, 'getDocumentSets').mockResolvedValue({
+        documents: [{ name: 'a b', documentSetId: 7, parameters: {}, uploadDate: new Date(), totalDocuments: 1 } as any],
+        total: 1,
+      });
+      await expect(api.uploadCsv({ datasetName: 'a-b' } as any)).rejects.toThrow('already exists');
+      expect(mockMetadataManager.addDocumentSet).not.toHaveBeenCalled();
     });
   });
 
