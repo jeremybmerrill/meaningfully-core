@@ -23,6 +23,7 @@ import { OllamaEmbedding} from '@llamaindex/ollama'
 import { MistralAIEmbedding, MistralAIEmbeddingModelType } from '@llamaindex/mistral'
 import { GeminiEmbedding } from '@llamaindex/google'
 import { PGVectorStore, PostgresDocumentStore, PostgresIndexStore } from '@llamaindex/postgres';
+import { PGVectorStoreWithNodeContent } from './PGVectorStoreWithNodeContent.js';
 import { AzureOpenAIEmbedding } from "@llamaindex/azure";
 import { Sploder } from "./sploder.js";
 import { CustomSentenceSplitter } from "./sentenceSplitter.js";
@@ -382,7 +383,7 @@ export async function createVectorStore(config: EmbeddingConfig, settings: Setti
     // for some reason the embedding model has to be specified here TOO
     // otherwise it defaults to Ada.
     case "postgres":
-      return new PGVectorStore({
+      return new PGVectorStoreWithNodeContent({
         client: clients.postgresClient,
         tableName: "vecs_" + sanitizeProjectName(config.projectName),
         dimensions: await getEmbeddingDimensions(embeddingModel, config.modelName),
